@@ -51,7 +51,7 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 parser.add_argument('--half', dest='half', action='store_true',
                     help='use half-precision(16-bit) ')
-parser.add_argument('--use-cuda', dest='use_cuda', default=False,
+parser.add_argument('--use-cuda', dest='use_cuda', default=True,
                     help='use cuda', type=bool)
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
@@ -192,8 +192,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
-        outputs['inputs'].append(input.detach().numpy())
-        outputs['labels'].append(target.detach().numpy())
+        outputs['inputs'].append(input.detach().cpu().numpy())
+        outputs['labels'].append(target.detach().cpu().numpy())
 
         # measure data loading time
         data_time.update(time.time() - end)
@@ -229,7 +229,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         if i % 20 == 0:
-            if i % 200 == 0:
+            if i % 100 == 0:
                 save_features(outputs,'train_ep_{}_step_{}_.h5'.format(epoch, i))
             clear(outputs)
 
@@ -256,8 +256,8 @@ def validate(val_loader, model, criterion, epoch=None):
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        outputs['inputs'].append(input.detach().numpy())
-        outputs['labels'].append(target.detach().numpy())
+        outputs['inputs'].append(input.detach().cpu().numpy())
+        outputs['labels'].append(target.detach().cpu().numpy())
 
         if args.use_cuda:
             target = target.cuda(async=True)
@@ -287,13 +287,11 @@ def validate(val_loader, model, criterion, epoch=None):
         end = time.time()
 
         if i % 20 == 0:
-            print('i?',i)
             if i % 20 == 0:
                 save_features(outputs,'val_{}_step_{}_.h5'.format(epoch, i))
             clear(outputs)
 
         if i % args.print_freq == 0:
-            print('i!',i)
             print('Test: [{0}/{1}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
@@ -312,7 +310,7 @@ class Extractor(object):
         outputs[self.name]=[]
     
     def extract(self, module, input, output):
-        outputs[self.name].append(output.detach().numpy())
+        outputs[self.name].append(output.detach().cpu().numpy())
 
 def save_features(outputs, path):
     f = h5.File(os.path.join(args.feature_dir, path), 'w')
