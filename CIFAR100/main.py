@@ -16,6 +16,9 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import vgg
 
+np.random.seed(0)
+torch.manual_seed(0)
+
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
                      and name.startswith("vgg")
@@ -68,8 +71,17 @@ outputs = {}
 outputs['inputs'] = []
 outputs['labels'] = []
  
+
+samplePoints = np.concatenate([
+    np.arange(0,10), 
+    np.arange(10,25,2), 
+    np.arange(25,50,4), 
+    np.arange(50,150,10), 
+    np.arange(150,300,20)
+])
+
 def main():
-    global args, best_prec1
+    global args, outputs, samplePoints, best_prec1
     args = parser.parse_args()
 
     print('cuda',args.use_cuda)
@@ -85,7 +97,8 @@ def main():
     model = vgg.__dict__[args.arch]()
 
     # model.features = torch.nn.DataParallel(model.features)
-   
+    
+
     for i, L in enumerate(model.features):
         if 'ReLU' not in str(L) and "Dropout" not in str(L):
             name = 'features_'+str(i)+"_"+str(L)
@@ -122,7 +135,7 @@ def main():
                                      std=[0.229, 0.224, 0.225])
 
     train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='./data', train=True, transform=transforms.Compose([
+        datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(32, 4),
             transforms.ToTensor(),
@@ -132,7 +145,7 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='./data', train=False, transform=transforms.Compose([
+        datasets.CIFAR100(root='./data', train=False, transform=transforms.Compose([
             transforms.ToTensor(),
             normalize,
         ])),
@@ -228,9 +241,12 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        if i % 20 == 0:
-            if i % 100 == 0:
-                save_features(outputs,'train_ep_{}_step_{}_.h5'.format(epoch, i))
+        
+        if epoch in samplePoints:
+            if i is not 0 and i % 20 == 0:
+                save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i))
+                clear(outputs)
+        else:
             clear(outputs)
 
         if i % args.print_freq == 0:
@@ -286,9 +302,9 @@ def validate(val_loader, model, criterion, epoch=None):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i % 20 == 0:
+        if i is not 0 and i % 20 == 0:
             if i % 20 == 0:
-                save_features(outputs,'val_{}_step_{}_.h5'.format(epoch, i))
+                save_features(outputs,'val_{}_step_{}_'.format(epoch, i))
             clear(outputs)
 
         if i % args.print_freq == 0:
@@ -312,13 +328,58 @@ class Extractor(object):
     def extract(self, module, input, output):
         outputs[self.name].append(output.detach().cpu().numpy())
 
+class Downsampler(object):
+    def __init__(self, **kwargs):
+        self.keys = []
+        self.perms_dict = {}
+        self.samples=5000
+
+    def downsample(self, layer):
+        np.random.seed(0)
+        print('original layer shape: {}'.format(layer.shape))
+        fsize = layer.shape[-1]
+        if fsize > self.samples:
+            if fsize in self.keys:
+                print('using perm for layer size: ',fsize)
+                perm = self.perms_dict[fsize]
+            else:
+                print('creating new perm for layer size: ',fsize)
+                perm = np.sort(np.random.permutation(fsize)[:self.samples])
+                self.keys.append(fsize)
+                self.perms_dict[fsize] = perm
+            layer = layer[:,perm]
+        print('new layer shape: {}'.format(layer.shape)) 
+        return layer
+
 def save_features(outputs, path):
-    f = h5.File(os.path.join(args.feature_dir, path), 'w')
+    outputs = process_outputs(outputs)
     for key in outputs:
+        fullPath = os.path.join(args.feature_dir, path + key + '.h5').replace(' ', '_').replace('(','').replace(')','')
+        f = h5.File(fullPath, 'w')
         print('saving output: {}'.format(key))
-        data = np.squeeze(np.array(outputs[key])).astype('float16')
-        f.create_dataset(key, data=data)
-    f.close()
+        data = outputs[key]
+        print(data.shape)
+        f.create_dataset('obj_arr', data=data)
+        f.close()
+
+def process_outputs(outputs):
+    labels = np.reshape(outputs['labels'],-1)
+    numLabels = np.unique(labels).shape[0]
+    count, _ = np.histogram(labels, bins=numLabels)
+    print(count)
+    print(np.unique(labels))
+    minCount = count.min()-1
+    print('mc:', minCount)
+    dataDict = {}
+    for key in outputs:
+        data = np.array(outputs[key]).astype('float16')
+        data = np.reshape(data, (data.shape[0]*data.shape[1], -1))
+        data = ds.downsample(data)
+        # minCount clips the arrays to the shortest number of labelled examples in the epoch.
+        dataByLabel = np.array([data[labels==label][:minCount] for label in np.unique(labels)])
+        dataDict[key] = dataByLabel
+
+    return dataDict
     
 def clear(outputs):
     for key in outputs:
@@ -372,4 +433,5 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == '__main__':
+    ds = Downsampler()
     main()
