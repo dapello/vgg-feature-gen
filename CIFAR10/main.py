@@ -56,6 +56,8 @@ parser.add_argument('--half', dest='half', action='store_true',
                     help='use half-precision(16-bit) ')
 parser.add_argument('--use-cuda', dest='use_cuda', default=True,
                     help='use cuda', type=bool)
+parser.add_argument('--save--train-features', dest='save_train_features', default=False,
+                    help='save features across training', type=bool)
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
                     default='save_temp', type=str)
@@ -99,19 +101,20 @@ def main():
     # model.features = torch.nn.DataParallel(model.features)
     
 
-    for i, L in enumerate(model.features):
-        if 'ReLU' not in str(L) and "Dropout" not in str(L):
-            name = 'features_'+str(i)+"_"+str(L)
-       	    extractor = Extractor(name)
-       	    L.register_forward_hook(extractor.extract)
-       	    print('applied forward hook to extract features from:{}'.format(name))
+    if args.save_train_features:
+        for i, L in enumerate(model.features):
+            if 'ReLU' not in str(L) and "Dropout" not in str(L):
+                name = 'features_'+str(i)+"_"+str(L)
+       	        extractor = Extractor(name)
+       	        L.register_forward_hook(extractor.extract)
+       	        print('applied forward hook to extract features from:{}'.format(name))
 
-    for i, L in enumerate(model.classifier):
-        if 'ReLU' not in str(L) and "Dropout" not in str(L):
-            name = 'classifier_'+str(i)+"_"+str(L)
-       	    extractor = Extractor(name)
-       	    L.register_forward_hook(extractor.extract)
-       	    print('applied forward hook to extract features from:{}'.format(name))
+        for i, L in enumerate(model.classifier):
+            if 'ReLU' not in str(L) and "Dropout" not in str(L):
+                name = 'classifier_'+str(i)+"_"+str(L) 
+                extractor = Extractor(name)
+                L.register_forward_hook(extractor.extract)
+                print('applied forward hook to extract features from:{}'.format(name))
 
     if args.use_cuda:
         model.cuda()
@@ -241,13 +244,14 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        
-        if epoch in samplePoints:
-            if i is not 0 and i % 20 == 0:
-                save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i))
+ 
+        if args.save_train_features:
+            if epoch in samplePoints:
+                if i is not 0 and i % 20 == 0:
+                    save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i))
+                    clear(outputs)
+            else:
                 clear(outputs)
-        else:
-            clear(outputs)
 
         if i % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
@@ -302,10 +306,11 @@ def validate(val_loader, model, criterion, epoch=None):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i is not 0 and i % 20 == 0:
-            if i % 20 == 0:
-                save_features(outputs,'val_{}_step_{}_'.format(epoch, i))
-            clear(outputs)
+        if args.save_train_features:
+            if i is not 0 and i % 20 == 0:
+                if i % 20 == 0:
+                    save_features(outputs,'val_{}_step_{}_'.format(epoch, i))
+                clear(outputs)
 
         if i % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
