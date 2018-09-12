@@ -36,7 +36,7 @@ parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('-b', '--batch-size', default=128, type=int,
+parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
                     metavar='LR', help='initial learning rate')
@@ -48,13 +48,15 @@ parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 20)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('-s', '--sample-train-features', dest='sample_train_features', action='store_true',
+                    help='sample model features on unshuffled training set')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 parser.add_argument('--half', dest='half', action='store_true',
                     help='use half-precision(16-bit) ')
-parser.add_argument('--use-cuda', dest='use_cuda', default=True,
+parser.add_argument('--use-cuda', dest='use_cuda', default=False,
                     help='use cuda', type=bool)
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
@@ -119,15 +121,18 @@ def main():
     # optionally resume from a checkpoint
     if args.resume:
         if os.path.isfile(args.resume):
-            print "=> loading checkpoint '{}'".format(args.resume)
-            checkpoint = torch.load(args.resume)
+            print("=> loading checkpoint '{}'".format(args.resume))
+            if args.use_cuda:
+                checkpoint = torch.load(args.resume)
+            else:
+                checkpoint = torch.load(args.resume, map_location='cpu')
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
             model.load_state_dict(checkpoint['state_dict'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.evaluate, checkpoint['epoch']))
         else:
-            print "=> no checkpoint found at '{}'".format(args.resume)
+            print("=> no checkpoint found at '{}'".format(args.resume))
 
     cudnn.benchmark = True
 
@@ -152,10 +157,18 @@ def main():
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
+    feature_extract_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])),
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True)
+
     # define loss function (criterion) and pptimizer
     if args.use_cuda:
         criterion = nn.CrossEntropyLoss().cuda()
-    else: 
+    else:
         criterion = nn.CrossEntropyLoss()#.cuda()
 
     if args.half:
@@ -165,6 +178,10 @@ def main():
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
+
+    if args.sample_train_features:
+        sample_features(feature_extract_loader, model, criterion, checkpoint['epoch'])
+        return
 
     if args.evaluate:
         validate(val_loader, model, criterion)
@@ -242,13 +259,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
-        if epoch in samplePoints:
-            if i is not 0 and i % 20 == 0:
-                save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i))
-                clear(outputs)
-        else:
-            clear(outputs)
-
         if i % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -302,11 +312,6 @@ def validate(val_loader, model, criterion, epoch=None):
         batch_time.update(time.time() - end)
         end = time.time()
 
-        if i is not 0 and i % 20 == 0:
-            if i % 20 == 0:
-                save_features(outputs,'val_{}_step_{}_'.format(epoch, i))
-            clear(outputs)
-
         if i % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -320,11 +325,68 @@ def validate(val_loader, model, criterion, epoch=None):
 
     return top1.avg
 
+def sample_features(feature_extract_loader, model, criterion, epoch):
+    """ 
+        Run one train epoch
+    """
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+
+    # switch to eval mode
+    model.eval()
+
+    end = time.time()
+    for i, (input, target) in enumerate(feature_extract_loader):
+        outputs['inputs'].append(input.detach().cpu().numpy())
+        outputs['labels'].append(target.detach().cpu().numpy())
+
+        if args.use_cuda:
+            target = target.cuda(async=True)
+            input_var = torch.autograd.Variable(input).cuda()
+        else:
+            target = target#.cuda(async=True)
+            input_var = torch.autograd.Variable(input)#.cuda()
+
+        target_var = torch.autograd.Variable(target)
+        if args.half:
+            input_var = input_var.half()
+
+        # compute output
+        output = model(input_var)
+        loss = criterion(output, target_var)
+
+        output = output.float()
+        loss = loss.float()
+
+        # measure accuracy and record loss
+        prec1 = accuracy(output.data, target)[0]
+        losses.update(loss.data[0], input.size(0))
+        top1.update(prec1[0], input.size(0))
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+    
+
+        save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i)) 
+        clear(outputs)
+
+        if i % args.print_freq == 0:
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                      epoch, i, len(feature_extract_loader), batch_time=batch_time,
+                      data_time=data_time, loss=losses, top1=top1))
+
 class Extractor(object):
     def __init__(self, name):
         self.name = name
         outputs[self.name]=[]
-    
+
     def extract(self, module, input, output):
         outputs[self.name].append(output.detach().cpu().numpy())
 
@@ -363,21 +425,19 @@ def save_features(outputs, path):
         f.close()
 
 def process_outputs(outputs):
-    labels = np.reshape(outputs['labels'],-1)
-    numLabels = np.unique(labels).shape[0]
-    count, _ = np.histogram(labels, bins=numLabels)
-    print(count)
-    print(np.unique(labels))
-    minCount = count.min()-1
-    print('mc:', minCount)
+    # labels = np.reshape(outputs['labels'],-1)
+    # numLabels = np.unique(labels).shape[0]
+    # count, _ = np.histogram(labels, bins=numLabels)
+    # minCount = count.min()-1
     dataDict = {}
     for key in outputs:
         data = np.array(outputs[key]).astype('float16')
         data = np.reshape(data, (data.shape[0]*data.shape[1], -1))
-        data = ds.downsample(data)
+        print(key, data.shape)
+        # data = ds.downsample(data)
         # minCount clips the arrays to the shortest number of labelled examples in the epoch.
-        dataByLabel = np.array([data[labels==label][:minCount] for label in np.unique(labels)])
-        dataDict[key] = dataByLabel
+        # dataByLabel = np.array([data[labels==label][:minCount] for label in np.unique(labels)])
+        dataDict[key] = data
 
     return dataDict
     
