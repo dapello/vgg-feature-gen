@@ -425,18 +425,11 @@ def save_features(outputs, path):
         f.close()
 
 def process_outputs(outputs):
-    # labels = np.reshape(outputs['labels'],-1)
-    # numLabels = np.unique(labels).shape[0]
-    # count, _ = np.histogram(labels, bins=numLabels)
-    # minCount = count.min()-1
     dataDict = {}
     for key in outputs:
         data = np.array(outputs[key]).astype('float16')
         data = np.reshape(data, (data.shape[0]*data.shape[1], -1))
         print(key, data.shape)
-        # data = ds.downsample(data)
-        # minCount clips the arrays to the shortest number of labelled examples in the epoch.
-        # dataByLabel = np.array([data[labels==label][:minCount] for label in np.unique(labels)])
         dataDict[key] = data
 
     return dataDict
