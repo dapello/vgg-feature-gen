@@ -101,19 +101,20 @@ def main():
     # model.features = torch.nn.DataParallel(model.features)
     
 
-    for i, L in enumerate(model.features):
-        if 'ReLU' not in str(L) and "Dropout" not in str(L):
+    if args.sample_train_features:
+        for i, L in enumerate(model.features):
+            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
             name = 'features_'+str(i)+"_"+str(L)
-       	    extractor = Extractor(name)
-       	    L.register_forward_hook(extractor.extract)
-       	    print('applied forward hook to extract features from:{}'.format(name))
+            extractor = Extractor(name)
+            L.register_forward_hook(extractor.extract)
+            print('applied forward hook to extract features from:{}'.format(name))
 
-    for i, L in enumerate(model.classifier):
-        if 'ReLU' not in str(L) and "Dropout" not in str(L):
+        for i, L in enumerate(model.classifier):
+            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
             name = 'classifier_'+str(i)+"_"+str(L)
-       	    extractor = Extractor(name)
-       	    L.register_forward_hook(extractor.extract)
-       	    print('applied forward hook to extract features from:{}'.format(name))
+            extractor = Extractor(name)
+            L.register_forward_hook(extractor.extract)
+            print('applied forward hook to extract features from:{}'.format(name))
 
     if args.use_cuda:
         model.cuda()
@@ -157,13 +158,14 @@ def main():
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
-    feature_extract_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-            normalize,
-        ])),
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True)
+    if args.sample_train_features:
+        feature_extract_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])),
+            batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
 
     # define loss function (criterion) and pptimizer
     if args.use_cuda:
