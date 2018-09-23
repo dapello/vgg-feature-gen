@@ -16,8 +16,6 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import vgg
 
-np.random.seed(0)
-torch.manual_seed(0)
 
 model_names = sorted(name for name in vgg.__dict__
     if name.islower() and not name.startswith("__")
@@ -32,6 +30,8 @@ parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg19',
                     ' (default: vgg19)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
+parser.add_argument('--seed', dest='seed', default=0, type=int,
+                    help='random number generator seed')
 parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -56,8 +56,8 @@ parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
 parser.add_argument('--half', dest='half', action='store_true',
                     help='use half-precision(16-bit) ')
-parser.add_argument('--use-cuda', dest='use_cuda', default=False,
-                    help='use cuda', type=bool)
+parser.add_argument('-gpu', '--use-cuda', dest='use_cuda', action='store_true',
+                    help='use cuda')
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
                     default='save_temp', type=str)
@@ -86,6 +86,9 @@ def main():
     global args, outputs, samplePoints, best_prec1
     args = parser.parse_args()
 
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    
     print('cuda',args.use_cuda)
 
     # Check the save_dir exists or not
