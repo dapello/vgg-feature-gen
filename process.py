@@ -5,9 +5,14 @@ import h5py as h5
 
 
 DATA_DIR = 'CIFAR100/feature_vgg16/'
-TARGET_DIR = 'CIFAR100/formatted_feature_vgg16/'
+TARGET_DIR = 'CIFAR100/formatted_feature_vgg16_randperm_example_selection/'
+sortBy = 'random'
+# sortby = 'beta_softmax'
 
 def main():
+    if not os.path.exists(TARGET_DIR):
+        os.makedirs(TARGET_DIR)
+
     all_data_paths = os.listdir(DATA_DIR)
     layer_ids = np.unique([path.split('_')[5]+'_'+path.split('_')[6] for path in all_data_paths if ('features' in path or 'classifier' in path)])
     print(layer_ids)
@@ -16,9 +21,12 @@ def main():
     input_data = load_and_sort(DATA_DIR, 'inputs')
     label_data = load_and_sort(DATA_DIR, 'labels')
 
-    # sort by scaled softmax "confidence" estimate
-    beta = 0.4
-    confs, orders = get_conf_order(last_layer_data, beta)
+    if sortBy == 'beta_softmax':
+        # sort by scaled softmax "confidence" estimate
+        beta = 0.4
+        confs, orders = get_conf_order(last_layer_data, beta)
+    elif sortBy == 'random':
+        orders = get_rand_order(last_layer_data)
 
     for layer_id in layer_ids:
         layer_id = layer_id+'_'
@@ -116,6 +124,12 @@ def softmax(X, beta=1.0, axis=None):
     if len(X.shape) == 1: p = p.flatten()
 
     return p
+
+def get_rand_order(layer_data):
+    indices = np.arange(layer_data.shape[1])
+    rand_indices = np.random.permutation(indices)
+    stacked_rand_indices = np.tile(rand_indices,(layer_data.shape[0],1))
+    return stacked_rand_indices
 
 def get_conf_order(layer_data, beta):
     confs = np.zeros(layer_data.shape[:2])
