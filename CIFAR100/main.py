@@ -36,6 +36,8 @@ parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
+parser.add_argument('--dropout', default=0.5, type=float,
+                    help='probability of dropout')
 parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
@@ -99,7 +101,7 @@ def main():
     if not os.path.exists(args.feature_dir):
         os.makedirs(args.feature_dir)
 
-    model = vgg.__dict__[args.arch]()
+    model = vgg.__dict__[args.arch](dropout=args.dropout)
 
     # model.features = torch.nn.DataParallel(model.features)
     

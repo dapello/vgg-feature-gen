@@ -16,24 +16,27 @@ class VGG(nn.Module):
     '''
     VGG model 
     '''
-    def __init__(self, features):
+    def __init__(self, features, dropout=0.5):
         super(VGG, self).__init__()
         self.features = features
+        print('dropout = {}'.format(dropout))
         self.classifier = nn.Sequential(
-            nn.Dropout(),
+            nn.Dropout(p=dropout),
             nn.Linear(512, 512),
             nn.ReLU(True),
-            nn.Dropout(),
+            nn.Dropout(p=dropout),
             nn.Linear(512, 512),
             nn.ReLU(True),
             nn.Linear(512, 100),
         )
          # Initialize weights
         for m in self.modules():
+            print(m)
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
                 m.bias.data.zero_()
+
 
 
     def forward(self, x):
@@ -68,41 +71,41 @@ cfg = {
 }
 
 
-def vgg11():
+def vgg11(dropout=0.5):
     """VGG 11-layer model (configuration "A")"""
-    return VGG(make_layers(cfg['A']))
+    return VGG(make_layers(cfg['A']), dropout=dropout)
 
 
-def vgg11_bn():
+def vgg11_bn(dropout=0.5):
     """VGG 11-layer model (configuration "A") with batch normalization"""
-    return VGG(make_layers(cfg['A'], batch_norm=True))
+    return VGG(make_layers(cfg['A'], batch_norm=True), dropout=dropout)
 
 
-def vgg13():
+def vgg13(dropout=0.5):
     """VGG 13-layer model (configuration "B")"""
-    return VGG(make_layers(cfg['B']))
+    return VGG(make_layers(cfg['B']), dropout=dropout)
 
 
-def vgg13_bn():
+def vgg13_bn(dropout=0.5):
     """VGG 13-layer model (configuration "B") with batch normalization"""
-    return VGG(make_layers(cfg['B'], batch_norm=True))
+    return VGG(make_layers(cfg['B'], batch_norm=True), dropout=dropout)
 
 
-def vgg16():
+def vgg16(dropout=0.5):
     """VGG 16-layer model (configuration "D")"""
-    return VGG(make_layers(cfg['D']))
+    return VGG(make_layers(cfg['D']), dropout=dropout)
 
 
-def vgg16_bn():
+def vgg16_bn(dropout=0.5):
     """VGG 16-layer model (configuration "D") with batch normalization"""
-    return VGG(make_layers(cfg['D'], batch_norm=True))
+    return VGG(make_layers(cfg['D'], batch_norm=True), dropout=dropout)
 
 
-def vgg19():
+def vgg19(dropout=0.5):
     """VGG 19-layer model (configuration "E")"""
-    return VGG(make_layers(cfg['E']))
+    return VGG(make_layers(cfg['E']), dropout=dropout)
 
 
-def vgg19_bn():
+def vgg19_bn(dropout=0.5):
     """VGG 19-layer model (configuration 'E') with batch normalization"""
-    return VGG(make_layers(cfg['E'], batch_norm=True))
+    return VGG(make_layers(cfg['E'], batch_norm=True), dropout=dropout)
