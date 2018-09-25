@@ -113,11 +113,11 @@ def main():
             print('applied forward hook to extract features from:{}'.format(name))
 
         for i, L in enumerate(model.classifier):
-            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
-            name = 'classifier_'+str(i)+"_"+str(L)
-            extractor = Extractor(name)
-            L.register_forward_hook(extractor.extract)
-            print('applied forward hook to extract features from:{}'.format(name))
+            if "Dropout" not in str(L):
+                name = 'classifier_'+str(i)+"_"+str(L)
+                extractor = Extractor(name)
+                L.register_forward_hook(extractor.extract)
+                print('applied forward hook to extract features from:{}'.format(name))
 
     if args.use_cuda:
         model.cuda()
@@ -185,7 +185,7 @@ def main():
                                 weight_decay=args.weight_decay)
 
     if args.sample_train_features:
-        sample_features(feature_extract_loader, model, criterion, checkpoint['epoch'])
+        sample_features(feature_extract_loader, model, criterion, args.start_epoch)
         return
 
     if args.evaluate:
