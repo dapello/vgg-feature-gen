@@ -50,8 +50,8 @@ parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 20)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('-s', '--sample-train-features', dest='sample_train_features', action='store_true',
-                    help='sample model features on unshuffled training set')
+parser.add_argument('-s', '--sample-features', dest='sample_features', action='store_true',
+                    help='sample model features on unshuffled training and validation set')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
@@ -106,7 +106,7 @@ def main():
     # model.features = torch.nn.DataParallel(model.features)
     
 
-    if args.sample_train_features:
+    if args.sample_features:
         for i, L in enumerate(model.features):
             # if 'ReLU' not in str(L) and "Dropout" not in str(L):
             name = 'features_'+str(i)+"_"+str(L)
@@ -145,15 +145,28 @@ def main():
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-    train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, 4),
-            transforms.ToTensor(),
-            normalize,
-        ]), download=True),
-        batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True)
+    if args.sample_features:
+        # when sampling features, do not shuffle or augment training images
+        print("Creating train_loader with no shuffling or augmentation for feature sampling")
+        train_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
+                transforms.ToTensor(),
+                normalize,
+            ])),
+            batch_size=args.batch_size, shuffle=False,
+            num_workers=args.workers, pin_memory=True)
+    else:
+        # shuffle and augment training images during training
+        print("Creating train_loader with shuffling and augmentation for training")
+        train_loader = torch.utils.data.DataLoader(
+            datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, 4),
+                transforms.ToTensor(),
+                normalize,
+            ]), download=True),
+            batch_size=args.batch_size, shuffle=True,
+            num_workers=args.workers, pin_memory=True)
 
     val_loader = torch.utils.data.DataLoader(
         datasets.CIFAR100(root='./data', train=False, transform=transforms.Compose([
@@ -162,15 +175,6 @@ def main():
         ])),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
-
-    if args.sample_train_features:
-        feature_extract_loader = torch.utils.data.DataLoader(
-            datasets.CIFAR100(root='./data', train=True, transform=transforms.Compose([
-                transforms.ToTensor(),
-                normalize,
-            ])),
-            batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=True)
 
     # define loss function (criterion) and pptimizer
     if args.use_cuda:
@@ -186,8 +190,9 @@ def main():
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
-    if args.sample_train_features:
-        sample_features(feature_extract_loader, model, criterion, args.start_epoch)
+    if args.sample_features:
+        sample(train_loader, model, criterion, args.start_epoch, 'train')
+        sample(val_loader, model, criterion, args.start_epoch, 'val')
         return
 
     if args.evaluate:
@@ -332,9 +337,9 @@ def validate(val_loader, model, criterion, epoch=None):
 
     return top1.avg
 
-def sample_features(feature_extract_loader, model, criterion, epoch):
+def sample(loader, model, criterion, epoch, image_set):
     """ 
-        Run one train epoch
+        Run one epoch
     """
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -345,7 +350,7 @@ def sample_features(feature_extract_loader, model, criterion, epoch):
     model.eval()
 
     end = time.time()
-    for i, (input, target) in enumerate(feature_extract_loader):
+    for i, (input, target) in enumerate(loader):
         outputs['inputs'].append(input.detach().cpu().numpy())
         outputs['labels'].append(target.detach().cpu().numpy())
 
@@ -377,7 +382,7 @@ def sample_features(feature_extract_loader, model, criterion, epoch):
         end = time.time()
     
 
-        save_features(outputs,'train_ep_{}_step_{}_'.format(epoch, i)) 
+        save_features(outputs,'{}_ep_{}_step_{}_'.format(image_set, epoch, i)) 
         clear(outputs)
 
         if i % args.print_freq == 0:
@@ -386,7 +391,7 @@ def sample_features(feature_extract_loader, model, criterion, epoch):
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-                      epoch, i, len(feature_extract_loader), batch_time=batch_time,
+                      epoch, i, len(loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
 
 class Extractor(object):
