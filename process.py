@@ -3,12 +3,14 @@ import os
 import numpy as np
 import h5py as h5
 
-seed = 1
-DATA_DIR = 'CIFAR100/feature_rand_vgg16/'
-TARGET_DIR = 'CIFAR100/formatted_feature_rand_vgg16_rand_example_seed{}/'.format(seed)
-SUB_TARGET_DIRS = [str(i) for i in range(10)]
-sortBy = 'random'
-# sortby = 'beta_softmax'
+seed = 0
+tag = 'drop_0_feature_vgg16_bn' 
+DATA_DIR = 'CIFAR100/{}/'.format(tag)
+TARGET_DIR = 'CIFAR100/formatted_{}_seed{}/'.format(tag, seed)
+NUM_SUB_TARGET_DIRS = 10
+SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
+# sortBy = 'random'
+sortBy = 'beta_softmax'
 # sortBy = 'reverse_beta_softmax'
 
 def main():
@@ -16,48 +18,55 @@ def main():
         print('making dir: {}'.format(TARGET_DIR))
         os.makedirs(TARGET_DIR)
 
-    all_data_paths = os.listdir(DATA_DIR)
-    layer_ids = np.unique([path.split('_')[5]+'_'+path.split('_')[6] for path in all_data_paths if ('features' in path or 'classifier' in path)])
-    print(layer_ids)
+    # DATA_DIR contains folders for train and val; process them independently. 
+    # (with the exception of the down sampling; downsampler selects the same features across train and val)
+    all_data_folders = os.listdir(DATA_DIR)
+    for folder in all_data_folders:
+        data_dir = DATA_DIR+folder+'/'
+        all_data_paths = os.listdir(data_dir)
+        layer_ids = np.unique([path.split('_')[5]+'_'+path.split('_')[6] for path in all_data_paths if ('features' in path or 'classifier' in path)])
+        print(layer_ids)
 
-    last_layer_data = load_and_sort(DATA_DIR, 'classifier_6')
-    input_data = load_and_sort(DATA_DIR, 'inputs')
-    label_data = load_and_sort(DATA_DIR, 'labels')
+        last_layer_data = load_and_sort(data_dir, 'classifier_6')
+        input_data = load_and_sort(data_dir, 'inputs')
+        label_data = load_and_sort(data_dir, 'labels')
 
-    if sortBy == 'beta_softmax':
-        # sort by scaled softmax "confidence" estimate
-        beta = 0.4
-        confs, orders = get_conf_order(last_layer_data, beta)
-    elif sortBy == 'reverse_beta_softmax':
-        beta = 0.4
-        confs, orders = get_conf_order(last_layer_data, beta)
-        orders = np.flip(orders,1)
-    elif sortBy == 'random':
-        orders = get_rand_order(last_layer_data)
+        if sortBy == 'beta_softmax':
+            # sort by scaled softmax "confidence" estimate
+            beta = 0.4
+            confs, orders = get_conf_order(last_layer_data, beta)
+        elif sortBy == 'reverse_beta_softmax':
+            beta = 0.4
+            confs, orders = get_conf_order(last_layer_data, beta)
+            orders = np.flip(orders,1)
+        elif sortBy == 'random':
+            orders = get_rand_order(last_layer_data)
 
-    for i, layer_id in enumerate(layer_ids):
-        layer_id = layer_id+'_'
-        layer_paths = get_paths(DATA_DIR, layer_id)
-    
-        # load data files of interest
-        layer_data = load_and_sort(DATA_DIR, layer_id, downsample=True)
-    
-        conf_ordered_layer_data = apply_order(layer_data, orders)
-        del layer_data
+        # for all unique layers, load the data (concatenating steps across the epochs), apply downsample and sort, and save.
+        for i, layer_id in enumerate(layer_ids):
+            # appending '_' stops features_1 from matching features_11
+            layer_id = layer_id+'_'
+            layer_paths = get_paths(data_dir, layer_id)
         
-        target_dir = TARGET_DIR+SUB_TARGET_DIRS[i%len(SUB_TARGET_DIRS)]+'/'
-        if not os.path.exists(target_dir):
-            print('making dir: {}'.format(target_dir))
-            os.makedirs(target_dir)
+            # load data files of interest
+            layer_data = load_and_sort(data_dir, layer_id, downsample=True)
+        
+            conf_ordered_layer_data = apply_order(layer_data, orders)
+            del layer_data
+            
+            target_dir = TARGET_DIR+SUB_TARGET_DIRS[i%len(SUB_TARGET_DIRS)]+'/'
+            if not os.path.exists(target_dir):
+                print('making dir: {}'.format(target_dir))
+                os.makedirs(target_dir)
 
-        new_file = layer_paths[0].replace('step_0_', '')
-        new_path = target_dir+new_file
+            new_file = layer_paths[0].replace('step_0_', '')
+            new_path = target_dir+new_file
 
-        f = h5.File(new_path, 'w')
-        f.create_dataset('obj_arr', data=conf_ordered_layer_data)
-        f.close()
-        del conf_ordered_layer_data
-        print('saved data for {} to {}'.format(layer_id, new_path)) 
+            f = h5.File(new_path, 'w')
+            f.create_dataset('obj_arr', data=conf_ordered_layer_data)
+            f.close()
+            del conf_ordered_layer_data
+            print('saved data for {} to {}'.format(layer_id, new_path)) 
 
 def sort(paths):
     paths = np.array(paths)

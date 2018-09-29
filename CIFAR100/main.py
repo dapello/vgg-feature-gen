@@ -382,7 +382,7 @@ def sample(loader, model, criterion, epoch, image_set):
         end = time.time()
     
 
-        save_features(outputs,'{}_ep_{}_step_{}_'.format(image_set, epoch, i)) 
+        save_features(outputs,'{}/{}_ep_{}_step_{}_'.format(image_set, image_set, epoch, i)) 
         clear(outputs)
 
         if i % args.print_freq == 0:
@@ -429,6 +429,11 @@ def save_features(outputs, path):
     outputs = process_outputs(outputs)
     for key in outputs:
         fullPath = os.path.join(args.feature_dir, path + key + '.h5').replace(' ', '_').replace('(','').replace(')','')
+
+        # Check the feature_dir exists or not
+        if not os.path.exists(os.path.dirname(fullPath)):
+            os.makedirs(os.path.dirname(fullPath))
+
         f = h5.File(fullPath, 'w')
         print('saving output: {}'.format(key))
         data = outputs[key]
