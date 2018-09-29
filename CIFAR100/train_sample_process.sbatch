@@ -20,5 +20,6 @@ do
     echo "python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  -gpu  |& tee -a $log"
     python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  -gpu  --dropout=0.25  |& tee -a $log
     python main.py -a=$model --resume=${save_dir}/checkpoint_300.tar -gpu -s --start-epoch=300  --feature-dir=$feature_dir
+    python process.py $feature_dir betasoftmax 
     python process.py $feature_dir random 
 done
