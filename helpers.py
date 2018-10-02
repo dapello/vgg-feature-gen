@@ -76,6 +76,10 @@ def frame_constructor(paths, data, key, tag=None, mean=False):
     df['perm seed'] = pd.to_numeric(df['perm seed'], errors='coerce')
     df['feature size'] = pd.to_numeric(df['feature size'], errors='coerce')
     df['layer number'] = pd.to_numeric(df['layer number'], errors='coerce')
+    df.loc[df['coding']=='classifier', 'layer number'] = df.loc[
+        df['coding']=='classifier', 'layer number'] + df[
+        (df['coding']=='features') & (df['image set']=='train')
+    ].shape[0]
     return df
 
 def multi_frame_constructor(mani_dirs, tags, measures):
@@ -97,8 +101,8 @@ def make_contiguous(a):
 def display(df, measure, coding, title, dims=(12,7)):
     unique_tags = np.unique(df.tag.values)
     data = df[
-        (df['measure']==measure) &
-        (df['coding']==coding)
+        (df['measure']==measure)
+#         &(df['coding']==coding)
     ].sort_values(by=['layer number']).copy()
     
     for unique_tag in unique_tags:
