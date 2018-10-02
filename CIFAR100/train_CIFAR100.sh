@@ -1,10 +1,14 @@
 #!/bin/bash
 
-#for model in vgg11 vgg11_bn vgg13 vgg13_bn vgg16 vgg16_bn vgg19 vgg19_bn
-for model in vgg16
+for model in vgg1_sc
 do
-    echo "python main.py  --arch=$model  --save-dir=drop_75_save_$model  --dropout=0.75  --feature-dir=drop_75_feature_$model  -gpu  --seed=0 |& tee -a drop_75_log_$model"
-    python main.py  --arch=$model  --save-dir=drop_75_save_$model  --dropout=0.75  --feature-dir=drop_75_feature_$model  -gpu  --seed=0 |& tee -a drop_75_log_$model
+    drop=0
+    tag=drop_${drop}
+    log=${tag}-${model}-log
+    save_dir=${tag}-${model}-save
+    feature_dir=${tag}-${model}-features
+    echo "python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  |& tee -a $log"
+    python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  --dropout=0.${drop}  |& tee -a $log
 done
 
 #for model in vgg11 vgg11_bn vgg13 vgg13_bn vgg16 vgg16_bn vgg19 vgg19_bn
