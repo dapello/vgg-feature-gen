@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.init as init
 
 __all__ = [
-    'VGG', 'vgg1_sc', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
+    'VGG', 'vgg1_sc', 'vgg1_sc_bn', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
     'vgg19_bn', 'vgg19',
 ]
 

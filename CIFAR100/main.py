@@ -76,14 +76,6 @@ outputs['inputs'] = []
 outputs['labels'] = []
  
 
-samplePoints = np.concatenate([
-    np.arange(0,10), 
-    np.arange(10,25,2), 
-    np.arange(25,50,4), 
-    np.arange(50,150,10), 
-    np.arange(150,300,20)
-])
-
 def main():
     global args, outputs, samplePoints, best_prec1
     args = parser.parse_args()
@@ -198,6 +190,13 @@ def main():
     if args.evaluate:
         validate(val_loader, model, criterion)
         return
+
+    # save initial state of the network as epoch 0
+    save_checkpoint({
+        'epoch': 0,
+        'state_dict': model.state_dict(),
+        'best_prec1': 0,
+    }, False, filename=os.path.join(args.save_dir, 'checkpoint_{}.tar'.format(0)))
 
     for epoch in range(args.start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
@@ -382,7 +381,7 @@ def sample(loader, model, criterion, epoch, image_set):
         end = time.time()
     
 
-        save_features(outputs,'{}/{}_ep_{}_step_{}_'.format(image_set, image_set, epoch, i)) 
+        save_features(outputs,'{}/{}-ep_{}-step_{}-'.format(image_set, image_set, epoch, i)) 
         clear(outputs)
 
         if i % args.print_freq == 0:
@@ -402,33 +401,34 @@ class Extractor(object):
     def extract(self, module, input, output):
         outputs[self.name].append(output.detach().cpu().numpy())
 
-class Downsampler(object):
-    def __init__(self, **kwargs):
-        self.keys = []
-        self.perms_dict = {}
-        self.samples=5000
-
-    def downsample(self, layer):
-        np.random.seed(0)
-        print('original layer shape: {}'.format(layer.shape))
-        fsize = layer.shape[-1]
-        if fsize > self.samples:
-            if fsize in self.keys:
-                print('using perm for layer size: ',fsize)
-                perm = self.perms_dict[fsize]
-            else:
-                print('creating new perm for layer size: ',fsize)
-                perm = np.sort(np.random.permutation(fsize)[:self.samples])
-                self.keys.append(fsize)
-                self.perms_dict[fsize] = perm
-            layer = layer[:,perm]
-        print('new layer shape: {}'.format(layer.shape)) 
-        return layer
+# class Downsampler(object):
+#     def __init__(self, **kwargs):
+#         self.keys = []
+#         self.perms_dict = {}
+#         self.samples=5000
+# 
+#     def downsample(self, layer):
+#         np.random.seed(0)
+#         print('original layer shape: {}'.format(layer.shape))
+#         fsize = layer.shape[-1]
+#         if fsize > self.samples:
+#             if fsize in self.keys:
+#                 print('using perm for layer size: ',fsize)
+#                 perm = self.perms_dict[fsize]
+#             else:
+#                 print('creating new perm for layer size: ',fsize)
+#                 perm = np.sort(np.random.permutation(fsize)[:self.samples])
+#                 self.keys.append(fsize)
+#                 self.perms_dict[fsize] = perm
+#             layer = layer[:,perm]
+#         print('new layer shape: {}'.format(layer.shape)) 
+#         return layer
 
 def save_features(outputs, path):
     outputs = process_outputs(outputs)
     for key in outputs:
-        fullPath = os.path.join(args.feature_dir, path + key + '.h5').replace(' ', '_').replace('(','').replace(')','')
+        print(key)
+        fullPath = os.path.join(args.feature_dir, path + key + '.h5').replace(' ', '_')#.replace('(','').replace(')','')
 
         # Check the feature_dir exists or not
         if not os.path.exists(os.path.dirname(fullPath)):
@@ -503,5 +503,5 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == '__main__':
-    ds = Downsampler()
+    # ds = Downsampler()
     main()

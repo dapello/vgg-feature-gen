@@ -10,4 +10,21 @@ module load openmind/anaconda
 source activate p27torch
 
 cd /om2/user/dapello/code/vgg-feature-gen/CIFAR100
-./sample_CIFAR100.sh
+
+for seed in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14
+do
+    for model in vgg1_sc_bn
+    do
+        drop=0
+        tag=seed_${seed}-drop_${drop}
+        folder=network_data
+        log=${folder}/${tag}-${model}-log
+        save_dir=${folder}/${tag}-${model}-save
+        feature_dir=${folder}/${tag}-${model}-features
+        echo "python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  |& tee -a $log"
+        python main.py -a=$model --resume=${save_dir}/checkpoint_0.tar   -gpu -s --start-epoch=0    --feature-dir=$feature_dir
+        python main.py -a=$model --resume=${save_dir}/checkpoint_300.tar -gpu -s --start-epoch=300  --feature-dir=$feature_dir
+        python process.py $feature_dir betasoftmax 
+        python process.py $feature_dir random 
+    done
+done
