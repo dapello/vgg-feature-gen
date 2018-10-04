@@ -15,7 +15,7 @@ for ((i = 0; i <= 5; i++)); do
     for model in vgg1_sc vgg1_sc_bn
     do
         drop=0
-        tag=drop_${drop}
+        tag=seed_${i}-drop_${drop}
         folder=network_data
         log=${folder}/${tag}-${model}-log
         save_dir=${folder}/${tag}-${model}-save
@@ -32,7 +32,7 @@ for ((i = 0; i <= 5; i++)); do
         done
         
         # process resultant feature dirs
-        # python process.py $feature_dir betasoftmax 
-        # python process.py $feature_dir random 
+        # python process.py $feature_dir betasoftmax ${i}
+        # python process.py $feature_dir random ${i}
     done
 done
