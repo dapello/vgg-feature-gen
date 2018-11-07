@@ -2,6 +2,7 @@ import argparse
 import os
 import shutil
 import time
+import random
 
 import numpy as np
 import h5py as h5
@@ -79,9 +80,13 @@ outputs['labels'] = []
 def main():
     global args, outputs, samplePoints, best_prec1
     args = parser.parse_args()
-
+    
+    # repeatability, damnit
+    random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    if args.use_cuda:
+        torch.cuda.manual_seed(args.seed)
     
     print('cuda',args.use_cuda)
 
@@ -94,9 +99,9 @@ def main():
         os.makedirs(args.feature_dir)
 
     model = vgg.__dict__[args.arch](dropout=args.dropout)
-
+    # print('>>> Model Parameters: {}'.format(sum([p.size() for p in model.parameters()])))
+    print('>>> Model Parameters: {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     # model.features = torch.nn.DataParallel(model.features)
-    
 
     if args.sample_features:
         for i, L in enumerate(model.features):

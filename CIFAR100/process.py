@@ -12,11 +12,12 @@ sortBy = sys.argv[2]
 
 print("seed: ", sys.argv[3])
 seed = int(sys.argv[3])
-DATA_DIR = './{}/'.format(tag)
-TARGET_DIR = tag.replace('features/', "formatted_features-sort_{}/".format(sortBy))
-# TARGET_DIR = './network_data/formatted-{}-sort_{}-seed_{}/'.format(tag, sortBy, seed)
-NUM_SUB_TARGET_DIRS = 10
+
+print("subfolders: ", sys.argv[4])
+NUM_SUB_TARGET_DIRS = int(sys.argv[4])
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
+DATA_DIR = './{}/'.format(tag)
+TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/".format(sortBy))
 
 def main():
     if not os.path.exists(TARGET_DIR):
@@ -27,6 +28,8 @@ def main():
     # (with the exception of the down sampling; downsampler selects the same features across train and val)
     all_data_folders = os.listdir(DATA_DIR)
     for folder in all_data_folders:
+        j = 0
+        
         data_dir = DATA_DIR+folder+'/'
         all_data_paths = os.listdir(data_dir)
         layer_ids = np.unique([path.split('-')[3] for path in all_data_paths if ('features' in path or 'classifier' in path)])
@@ -34,7 +37,6 @@ def main():
         print("processing {} for epochs: {}, at layers: {} ".format(folder, epochs, layer_ids))
         
         last_layer_data = load_and_sort(data_dir, ['-ep_300-', 'out_features=100,'])
-        input_data = load_and_sort(data_dir, ['-ep_300-', 'inputs'])
         label_data = load_and_sort(data_dir, ['-ep_300-', 'labels'])
         if sortBy == 'betasoftmax':
             # sort by scaled softmax "confidence" estimate
@@ -47,6 +49,23 @@ def main():
         elif sortBy == 'random':
             orders = get_rand_order(last_layer_data)
 
+        
+        input_data = load_and_sort(data_dir, ['-ep_0-', 'inputs'], downsample=True)
+
+        conf_ordered_input_data = apply_order(input_data, orders)
+
+        target_dir = TARGET_DIR+SUB_TARGET_DIRS[j%len(SUB_TARGET_DIRS)]+'/'
+        if not os.path.exists(target_dir):
+            print('making dir: {}'.format(target_dir))
+            os.makedirs(target_dir)
+
+        new_file = folder+'-input.h5' 
+        new_path = target_dir+new_file
+        f = h5.File(new_path, 'w')
+        f.create_dataset('obj_arr', data=conf_ordered_input_data)
+        f.close()
+        
+        j += 1
         # for all unique layers, load the data (concatenating steps across the epochs), apply downsample and sort, and save.
         for epoch in epochs:
             epoch = "-"+epoch+"-"
@@ -62,12 +81,13 @@ def main():
                 conf_ordered_layer_data = apply_order(layer_data, orders)
                 del layer_data
                 
-                target_dir = TARGET_DIR+SUB_TARGET_DIRS[i%len(SUB_TARGET_DIRS)]+'/'
+                target_dir = TARGET_DIR+SUB_TARGET_DIRS[j%len(SUB_TARGET_DIRS)]+'/'
+                j += 1
                 if not os.path.exists(target_dir):
                     print('making dir: {}'.format(target_dir))
                     os.makedirs(target_dir)
 
-                new_file = layer_paths[0].replace('step_0_', '')
+                new_file = layer_paths[0].replace('-step_0-', '-')
                 new_path = target_dir+new_file
 
                 f = h5.File(new_path, 'w')
