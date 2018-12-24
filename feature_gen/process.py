@@ -3,18 +3,20 @@ import os
 import numpy as np
 import h5py as h5
 import sys
-print("running script: ", sys.argv[0])
-print("experiment tag: ", sys.argv[1])
+
 tag = sys.argv[1]
-
-print("sort criteria: ", sys.argv[2])
 sortBy = sys.argv[2]
+last_epoch = '-ep_{}-'.format(sys.argv[3])
+seed = int(sys.argv[4])
+NUM_SUB_TARGET_DIRS = int(sys.argv[5])
 
-print("seed: ", sys.argv[3])
-seed = int(sys.argv[3])
+print("running script: ", sys.argv[0])
+print("experiment tag: ", tag)
+print("sort criteria: ", sortBy)
+print("last epoch: ", last_epoch)
+print("seed: ", seed)
+print("subfolders: ", NUM_SUB_TARGET_DIRS)
 
-print("subfolders: ", sys.argv[4])
-NUM_SUB_TARGET_DIRS = int(sys.argv[4])
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
 DATA_DIR = './{}/'.format(tag)
 TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/".format(sortBy))
@@ -35,9 +37,10 @@ def main():
         layer_ids = np.unique([path.split('-')[3] for path in all_data_paths if ('features' in path or 'classifier' in path)])
         epochs = np.unique([path.split('-')[1] for path in all_data_paths if ('features' in path or 'classifier' in path)])
         print("processing {} for epochs: {}, at layers: {} ".format(folder, epochs, layer_ids))
-        
-        last_layer_data = load_and_sort(data_dir, ['-ep_300-', 'out_features=100,'])
-        label_data = load_and_sort(data_dir, ['-ep_300-', 'labels'])
+       
+        last_layer_id = get_last_layer_id(layer_ids)
+        last_layer_data = load_and_sort(data_dir, [last_epoch, last_layer_id])
+        label_data = load_and_sort(data_dir, [last_epoch, 'labels'])
         if sortBy == 'betasoftmax':
             # sort by scaled softmax "confidence" estimate
             beta = 0.4
@@ -48,12 +51,11 @@ def main():
             orders = np.flip(orders,1)
         elif sortBy == 'random':
             orders = get_rand_order(last_layer_data)
-
+        elif sortBy == 'none':
+            orders = maintain_order(last_layer_data)
         
-        input_data = load_and_sort(data_dir, ['-ep_300-', 'inputs'], downsample=True)
-
+        input_data = load_and_sort(data_dir, [last_epoch, 'inputs'], downsample=True)
         conf_ordered_input_data = apply_order(input_data, orders)
-
         target_dir = TARGET_DIR+SUB_TARGET_DIRS[j%len(SUB_TARGET_DIRS)]+'/'
         if not os.path.exists(target_dir):
             print('making dir: {}'.format(target_dir))
@@ -73,17 +75,18 @@ def main():
             print(epoch)
             for i, layer_id in enumerate(layer_ids):
                 # appending '_' stops features_1 from matching features_11
-                print(layer_id)
+                # print(layer_id)
                 layer_paths = get_paths(data_dir, [epoch, layer_id])
                  
                 # load data files of interest
                 layer_data = load_and_sort(data_dir, [epoch, layer_id], downsample=True)
                 
                 # if it's the last layer, also save a softmaxed copy of it
-                if layer_id == layer_ids[-1]:
-                    print('hit final fc layer, create softmax representations')
-
-                    layer_data_sm = softmax(layer_data)
+                if last_layer_id == layer_id:
+                    print('hit final fc layer: {}, create softmax representations'.format(layer_id))
+                    layer_data_sm = softmax(layer_data, axis=2)
+                    #print(layer_data_sm[2,4,:])
+                    #print(layer_data_sm[2,4,:].sum())
                     conf_ordered_layer_data = apply_order(layer_data_sm, orders)
 
                     target_dir = TARGET_DIR+SUB_TARGET_DIRS[j%len(SUB_TARGET_DIRS)]+'/'
@@ -131,42 +134,35 @@ def get_paths(target_dir, strings):
     paths = os.listdir(target_dir)
     return sort([path for path in paths if match_strings(strings, path)])
 
-#def load_paths(target_dir, paths):
-#    data = []
-#    for path in paths:
-#        datum = np.array(h5.File(target_dir+path)['obj_arr'])
-#        data.append(datum)
-#    return np.concatenate(data)
-
 def load_paths(target_dir, paths):
-    print('target_dir:', target_dir)
+    #print('target_dir:', target_dir)
     data = []
     for path in paths:
-        #print('path:', path)
+#        print('path:', path)
         datum = np.array(h5.File(target_dir+path)['obj_arr'])
-        #print('datum:', datum.shape)
+#        print('datum:', datum.shape)
         data.append(datum)
     return np.concatenate(data)
 
 def label_sort(label_data, layer_data):
-    return np.array([layer_data[np.squeeze(label_data==label)] for label in np.unique(label_data).astype(int)])
+    for label in np.unique(label_data).astype(int):
+        guys = np.squeeze(label_data==label)
+    label_sorted_data = np.array([layer_data[np.squeeze(label_data==label)][:5000,:] for label in np.unique(label_data).astype(int)])
+    return label_sorted_data
 
 def load_and_sort(data_dir, strings, downsample=False):
     paths = get_paths(data_dir, strings)
-    label_paths = get_paths(data_dir, ['-ep_300-', 'labels'])
+    label_paths = get_paths(data_dir, [last_epoch, 'labels'])
     data = load_paths(data_dir, paths)
-    print('data shape', data.shape)
+    print('p',data_dir,data.shape)
     if downsample:
         data = ds.downsample(data)
 
     label_data = load_paths(data_dir, label_paths)
-    print('l data shape', label_data.shape)
+    print('l',label_data.shape)
     data_sorted = label_sort(label_data, data)
     print('Loaded and sorted {} data. Shape:{}'.format(strings, data_sorted.shape))
     return data_sorted
-
-def compose_img(x):
-    return np.transpose(x.reshape([3,32,32]).astype(float), [1,2,0])
 
 def softmax(X, beta=1.0, axis=None):
     """
@@ -211,6 +207,11 @@ def softmax(X, beta=1.0, axis=None):
 
     return p
 
+def maintain_order(layer_data):
+    indices = np.arange(layer_data.shape[1])
+    stacked_indices = np.tile(indices,(layer_data.shape[0],1))
+    return stacked_indices
+
 def get_rand_order(layer_data):
     np.random.seed(seed)
     indices = np.arange(layer_data.shape[1])
@@ -226,6 +227,14 @@ def get_conf_order(layer_data, beta):
         confs[p,:] = np.sort(xsoft[:,p])[::-1]
         orders[p,:] = np.argsort(xsoft[:,p])[::-1].astype(int)
     return confs, orders
+
+def get_last_layer_id(layer_ids):
+    classifiers = [layer_id for layer_id in layer_ids if 'classifier' in layer_id]
+    layer_nums = np.array([int(classifier.split('_')[1]) for classifier in classifiers])
+    last_layer_num_idx = layer_nums.argmax()
+
+    return classifiers[last_layer_num_idx]
+
 
 def apply_order(layer_data, orders):
     ordered_layer_data = np.array([layer_data[p,orders[p],:] for p in range(layer_data.shape[0])])
