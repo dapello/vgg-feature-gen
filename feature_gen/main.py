@@ -34,6 +34,8 @@ parser.add_argument('--dataset', '-d', metavar='ARCH', default='CIFAR10',
                     choices=data_sets,
                     help='Dataset, choose from: ' + ' | '.join(data_sets) +
                     ' (default: CIFAR10)')
+parser.add_argument('--invert', default=0, type=int, metavar='N',
+                    help='switch starting order of classes from the dataset to use')
 parser.add_argument('--classes', default=10, type=int, metavar='N',
                     help='number of classes from the dataset to use')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
@@ -44,10 +46,12 @@ parser.add_argument('--epochs', default=300, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--batchnorm', default=False, type=bool,
+parser.add_argument('--batchnorm', default=0, type=int,
                     help='If true, construct networks with batchnorm.')
 parser.add_argument('--dropout', default=0.0, type=float,
                     help='probability of dropout')
+parser.add_argument('--dataaug', default=1, type=int,
+                    help='whether or not to train with data augmentation')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--optimizer', metavar='OPT', default='SGD',
@@ -120,20 +124,6 @@ def main():
     print('>>> Model Parameters: {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
     # model.features = torch.nn.DataParallel(model.features)
 
-    if args.sample_features:
-        for i, L in enumerate(model.features):
-            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
-            name = 'features_'+str(i)+"_"+str(L)
-            extractor = Extractor(name)
-            L.register_forward_hook(extractor.extract)
-            print('applied forward hook to extract features from:{}'.format(name))
-
-        for i, L in enumerate(model.classifier):
-            if "Dropout" not in str(L):
-                name = 'classifier_'+str(i)+"_"+str(L)
-                extractor = Extractor(name)
-                L.register_forward_hook(extractor.extract)
-                print('applied forward hook to extract features from:{}'.format(name))
 
     if args.use_cuda:
         model.cuda()
@@ -178,6 +168,20 @@ def main():
 
 
     if args.sample_features:
+        for i, L in enumerate(model.features):
+            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
+            name = 'features_'+str(i)+"_"+str(L)
+            extractor = Extractor(name)
+            L.register_forward_hook(extractor.extract)
+            print('applied forward hook to extract features from:{}'.format(name))
+
+        for i, L in enumerate(model.classifier):
+            if "Dropout" not in str(L):
+                name = 'classifier_'+str(i)+"_"+str(L)
+                extractor = Extractor(name)
+                L.register_forward_hook(extractor.extract)
+                print('applied forward hook to extract features from:{}'.format(name))
+        
         sample(train_loader, model, criterion, args.start_epoch, 'train')
         #sample(val_loader, model, criterion, args.start_epoch, 'val')
         return
@@ -355,45 +359,49 @@ def sample(loader, model, criterion, epoch, image_set):
         outputs['labels'].append(target.detach().cpu().numpy())
 
         if args.use_cuda:
-            target = target.cuda(async=True)
-            input_var = torch.autograd.Variable(input).cuda()
+            target = target.cuda(async=True).long()
+            input_var = torch.autograd.Variable(input, volatile=True).cuda()
         else:
             target = target#.cuda(async=True)
-            input_var = torch.autograd.Variable(input)#.cuda()
-
-        target_var = torch.autograd.Variable(target)
-        if args.half:
-            input_var = input_var.half()
+            input_var = torch.autograd.Variable(input, volatile=True)#.cuda()
+        
+        target_var = torch.autograd.Variable(target, volatile=True).long()
 
         # compute output
         output = model(input_var)
-        # loss = criterion(output, target_var)
+        loss = criterion(output, target_var)
 
         output = output.float()
-        # loss = loss.float()
+        loss = loss.float()
 
         # measure accuracy and record loss
-        # prec1 = accuracy(output.data, target)[0]
-        # losses.update(loss.data[0], input.size(0))
-        # top1.update(prec1[0], input.size(0))
+        prec1 = accuracy(output.data, target)[0]
+        losses.update(loss.data[0], input.size(0))
+        top1.update(prec1[0], input.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
     
+        save_template = '{image_set}/imset_{image_set}-ep_{epoch}-step_{i}-acc_{top1.avg:.2f}-'.format(
+                image_set=image_set, 
+                epoch=epoch, 
+                i=i, 
+                top1=top1
+        )
 
-        save_features(outputs,'{}/{}-ep_{}-step_{}-'.format(image_set, image_set, epoch, i)) 
+        save_features(outputs, save_template) 
         clear(outputs)
 
         if i % args.print_freq == 0:
             pass
-            # print('Epoch: [{0}][{1}/{2}]\t'
-            #       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-            #       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-            #       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-            #       'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-            #           epoch, i, len(loader), batch_time=batch_time,
-            #           data_time=data_time, loss=losses, top1=top1))
+            print('Epoch: [{0}][{1}/{2}]\t'
+                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
+                      epoch, i, len(loader), batch_time=batch_time,
+                      data_time=data_time, loss=losses, top1=top1))
 
 class Extractor(object):
     def __init__(self, name):
@@ -405,14 +413,22 @@ class Extractor(object):
 
 def construct_data_loaders(args):
     print("constructing dataset loaders: ", args.dataset)
+    print('Data augmentation:', args.dataaug)
     if args.dataset == 'CIFAR10':
-        train_transform=transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, 4),
-            transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
-        ])
-        
+        if args.dataaug:
+            train_transform=transforms.Compose([
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomCrop(32, 4),
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+            ])
+        else:
+            print('no data augmentation')
+            train_transform=transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+            ])
+
         val_transform=transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
@@ -423,12 +439,19 @@ def construct_data_loaders(args):
 
     elif args.dataset == "CIFAR100":
         if int(args.classes) == 100:
-            train_transform=transforms.Compose([
-                transforms.RandomHorizontalFlip(),
-                transforms.RandomCrop(32, 4),
-                transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
-            ])
+            if args.dataaug:
+                train_transform=transforms.Compose([
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomCrop(32, 4),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                ])
+            else:
+                print('no data augmentation')
+                train_transform=transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                ])
             
             val_transform=transforms.Compose([
                 transforms.ToTensor(),
@@ -438,17 +461,26 @@ def construct_data_loaders(args):
             train_dataset = datasets.CIFAR100(root='./data', train=True, download=True, transform=train_transform)
             val_dataset = datasets.CIFAR100(root='./data', train=False, download=True, transform=val_transform)
         else:
+            if args.dataaug:
+                train_transform=transforms.Compose([
+                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomCrop(32, 4),
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                ])
+            else:
+                print('no data augmentation')
+                train_transform=transforms.Compose([
+                    transforms.ToTensor(),
+                    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                ])
+            
             train_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR100(
                         root='./data', 
                         download=True,
                         train=True,
-                        transform=transforms.Compose([
-                            transforms.RandomHorizontalFlip(),
-                            transforms.RandomCrop(32, 4),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
-                ])),
+                        transform=train_transform),
                 batch_size=50000, 
                 shuffle=False, 
                 num_workers=4, 
@@ -459,7 +491,13 @@ def construct_data_loaders(args):
                 # load images
                 pass 
             
-            train_dataset = torch.utils.data.TensorDataset(*sub_cifar100(images,labels,args.classes,500))
+            train_dataset = torch.utils.data.TensorDataset(*sub_cifar100(
+                images,
+                labels,
+                args.classes,
+                500,
+                invert=args.invert
+                ))
             
             val_loader = torch.utils.data.DataLoader(
                 datasets.CIFAR100(
@@ -480,7 +518,13 @@ def construct_data_loaders(args):
                 # load images
                 pass 
             
-            val_dataset = torch.utils.data.TensorDataset(*sub_cifar100(images,labels,args.classes,100))
+            val_dataset = torch.utils.data.TensorDataset(*sub_cifar100(
+                images,
+                labels,
+                args.classes,
+                100,
+                invert=args.invert
+                ))
     elif args.dataset == "MNIST":
         ds = datasets.MNIST
         # custom transforms
@@ -529,11 +573,16 @@ def construct_data_loaders(args):
     
     return train_loader, val_loader
 
-def sub_cifar100(images, labels, numcat, numexamp):
+def sub_cifar100(images, labels, numcat, numexamp, invert=0):
     print('numcat:', numcat)
     flatten = lambda l: [item for sublist in l for item in sublist]
-
-    label_set = torch.tensor(flatten([list(range(i, 100, 10)) for i in range(int(numcat/10))]))
+   
+    # invert reverses starting order for image catagories
+    if invert:
+        label_set = torch.tensor(flatten([list(range((9-i), 100, 10)) for i in range(int(numcat/10))]))
+    else:
+        label_set = torch.tensor(flatten([list(range(i, 100, 10)) for i in range(int(numcat/10))]))
+    print('label set:', label_set)
     sub_images = torch.zeros(numcat,numexamp,3,32,32)
     sub_labels = torch.zeros(numcat,numexamp)
     for i in range(len(label_set)):
@@ -558,6 +607,7 @@ def sub_cifar100(images, labels, numcat, numexamp):
 
 def save_features(outputs, path):
     outputs = process_outputs(outputs)
+    print(path)
     for key in outputs:
         data = outputs[key]
         fullPath = os.path.join(args.feature_dir, path + key + '-featnum_{}-.h5').replace(' ', '_').format(data.shape[1])

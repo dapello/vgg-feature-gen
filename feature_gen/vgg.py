@@ -24,7 +24,7 @@ class VGG(nn.Module):
             nn.ReLU(True),
             nn.Linear(512, 512),
             nn.ReLU(True),
-            nn.Linear(512, CLASSES),
+            nn.Linear(512, classes),
         )
          # Initialize weights
         for m in self.modules():
@@ -97,16 +97,17 @@ cfg = {
     'vgg10': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'vgg11': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'vgg12': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 'M'],
-    'vgg16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
+    'vgg13': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     
     'vggm2': [64, 'M', 128, 'M'],
     'vggm3': [64, 'M', 128, 'M', 256, 'M'],
     'vggm4': [64, 'M', 128, 'M', 256, 'M', 512, 'M'],
     'vggm5': [64, 'M', 128, 'M', 256, 'M', 512, 'M', 512, 'M'],
     'vgg11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    
-    'vgg13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
+
     'vgg19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
+
+    'stuck': [16, 'M', 32, 'M', 32, 'M']
 }
 
 in_num = {
@@ -124,18 +125,18 @@ in_num = {
     'vgg12': 512, 
     'vgg13': 512, 
     
-    'vggm2': 512, 
-    'vggm3': 512, 
-    'vggm4': 512, 
+    'vggm2': 8192, 
+    'vggm3': 4096, 
+    'vggm4': 2048, 
     'vggm5': 512, 
     'vgg11': 512, 
     
-    'vgg13': 512, 
     'vgg19': 512, 
+    'stuck': 512, 
 }
 
-def vgg(model, classes=CLASSES, batchnorm=False, dropout=0.5):
+def vgg(model, classes=CLASSES, batchnorm=False, dropout=0.0):
     return VGG(make_layers(cfg[model], batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)
 
-def vgg_s(model, classes=CLASSES, batchnorm=False, dropout=0.5):
+def vgg_s(model, classes=CLASSES, batchnorm=False, dropout=0.0):
     return VGG_s(make_layers(cfg[model], batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)

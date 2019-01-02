@@ -19,7 +19,7 @@ print("subfolders: ", NUM_SUB_TARGET_DIRS)
 
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
 DATA_DIR = './{}/'.format(tag)
-TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/".format(sortBy))
+TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/d/".format(sortBy))
 
 def main():
     if not os.path.exists(TARGET_DIR):
@@ -85,8 +85,6 @@ def main():
                 if last_layer_id == layer_id:
                     print('hit final fc layer: {}, create softmax representations'.format(layer_id))
                     layer_data_sm = softmax(layer_data, axis=2)
-                    #print(layer_data_sm[2,4,:])
-                    #print(layer_data_sm[2,4,:].sum())
                     conf_ordered_layer_data = apply_order(layer_data_sm, orders)
 
                     target_dir = TARGET_DIR+SUB_TARGET_DIRS[j%len(SUB_TARGET_DIRS)]+'/'
@@ -95,6 +93,8 @@ def main():
                         print('making dir: {}'.format(target_dir))
                         os.makedirs(target_dir)
 
+                    new_file = layer_paths[-1].replace('-step_0-', '-').replace('Linear', 'Softmax')
+                    print('new_filet', new_file)
                     new_file = layer_paths[0].replace('-step_0-', '-').replace('Linear', 'Softmax')
                     new_path = target_dir+new_file
 
