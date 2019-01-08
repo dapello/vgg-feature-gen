@@ -14,7 +14,7 @@ cd /om2/user/dapello/code/vgg-feature-gen/feature_gen
 for ((i = 0; i <= 5; i++)); 
 #for i in 0 
 do
-    for ((j = 2; j <= 13; j++)); 
+    for ((j = 1; j <= 13; j++)); 
     #for j in 1
     #for classes in 50 
     #for model in vgg1_mp_sc
@@ -28,19 +28,18 @@ do
         folder=network_data
         log=${folder}/${tag}-arch_${model}-log
         save_dir=${folder}/${tag}-arch_${model}-save
-        feature_dir=${folder}/exp_transfer-${tag}-arch_${model}-features
-        echo "python main.py -a=$model --save-dir=$save_dir  --feature-dir=$feature_dir  -gpu  |& tee -a $log"
-        
+        feature_dir=${folder}/${tag}-arch_${model}-features
+
         # sample at select epochs
         for epoch in 0 1 2 4 8 16 32 50
         do
-            python main.py --archclass=vgg_s -a=${model} --resume=${save_dir}/checkpoint_${epoch}.tar  -gpu -s --start-epoch=${epoch}  --feature-dir=$feature_dir -d=${dataset} --classes=${classes} --invert=1
+            python main.py --archclass=vgg_s -a=${model} --resume=${save_dir}/checkpoint_${epoch}.tar  -gpu -s --start-epoch=${epoch}  --feature-dir=$feature_dir -d=${dataset} --classes=${classes} --invert=0
             # python main.py -a=vgg16  --pretrained  -gpu -s --start-epoch=30  --feature-dir=tfeature_dir  -b=16  -d=HvM64
         done
         
         # process resultant feature dirs
-        python process.py $feature_dir betasoftmax $epochs ${i} 100
-        python process.py $feature_dir reversebetasoftmax $epochs ${i} 100
+        #python process.py $feature_dir betasoftmax $epochs ${i} 100
+        #python process.py $feature_dir reversebetasoftmax $epochs ${i} 100
         python process.py $feature_dir random $epochs ${i} 100
         rm -r $feature_dir
     done

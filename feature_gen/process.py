@@ -19,7 +19,7 @@ print("subfolders: ", NUM_SUB_TARGET_DIRS)
 
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
 DATA_DIR = './{}/'.format(tag)
-TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/d/".format(sortBy))
+TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/".format(sortBy))
 
 def main():
     if not os.path.exists(TARGET_DIR):
@@ -34,7 +34,7 @@ def main():
         
         data_dir = DATA_DIR+folder+'/'
         all_data_paths = os.listdir(data_dir)
-        layer_ids = np.unique([path.split('-')[3] for path in all_data_paths if ('features' in path or 'classifier' in path)])
+        layer_ids = np.unique([path.split('-')[4] for path in all_data_paths if ('features' in path or 'classifier' in path)])
         epochs = np.unique([path.split('-')[1] for path in all_data_paths if ('features' in path or 'classifier' in path)])
         print("processing {} for epochs: {}, at layers: {} ".format(folder, epochs, layer_ids))
        

@@ -383,7 +383,7 @@ def sample(loader, model, criterion, epoch, image_set):
         batch_time.update(time.time() - end)
         end = time.time()
     
-        save_template = '{image_set}/imset_{image_set}-ep_{epoch}-step_{i}-acc_{top1.avg:.2f}-'.format(
+        save_template = '{image_set}/{image_set}-ep_{epoch}-step_{i}-acc_{top1.avg:.2f}-'.format(
                 image_set=image_set, 
                 epoch=epoch, 
                 i=i, 
@@ -681,5 +681,4 @@ def accuracy(output, target, topk=(1,)):
 
 
 if __name__ == '__main__':
-    # ds = Downsampler()
     main()
