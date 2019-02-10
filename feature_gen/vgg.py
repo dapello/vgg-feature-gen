@@ -136,7 +136,8 @@ in_num = {
 }
 
 def vgg(model, classes=CLASSES, batchnorm=False, dropout=0.0):
-    return VGG(make_layers(cfg[model], batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)
+    layers = make_layers(cfg[model], batchnorm=batchnorm)
+    return VGG(layers, linear_in=in_num[model], dropout=dropout, classes=classes)
 
 def vgg_s(model, classes=CLASSES, batchnorm=False, dropout=0.0):
     return VGG_s(make_layers(cfg[model], batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)

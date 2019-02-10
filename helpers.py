@@ -5,8 +5,11 @@ from scipy.io import loadmat, savemat
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def match_strings(strings, path):
-    return any([string in path for string in strings])
+def match_strings(strings, path, any_or_all='any'):
+    if any_or_all == 'any':
+        return any([string in path for string in strings])
+    elif any_or_all == 'all':
+        return all([string in path for string in strings])
 
 def load_data(mani_dir, exclude=[]):
     paths = np.sort(np.array(os.listdir(mani_dir)))
@@ -206,21 +209,22 @@ def add_loss(df, loss_df):
     
     return df
 
-def delta_data(df, normalized=False):
+def delta_data(df):
     layer_nums = np.unique(df['layer number'])
     measure_id = df.loc[df['type']=='input', 'measure'].values
+    initial = np.zeros([2, measure_id.shape[0]]).astype('object')
+    initial[0,:] = measure_id
     deltas = np.zeros([layer_nums.shape[0], measure_id.shape[0]]).astype('object')
     deltas[0,:] = measure_id
     for n in layer_nums:
-        if n > 0:
-            if normalized:
-                deltas[n,:] = (df.loc[df['layer number']==n, 'value'].values - df.loc[df['layer number']==n-1, 'value'].values)/np.abs(df.loc[df['layer number']==n-1, 'value'].values)
-            else:
-                deltas[n,:] = df.loc[df['layer number']==n, 'value'].values - df.loc[df['layer number']==n-1, 'value'].values
+        if n == 0:
+            initial[1,:] = df.loc[df['layer number']==n, 'value'].values
+        else:
+            deltas[n,:] = df.loc[df['layer number']==n, 'value'].values - df.loc[df['layer number']==n-1, 'value'].values
 
-    return deltas.T
+    return deltas.T, initial.T 
 
-def get_delta_frame(dir_template, ep, seeds=[0,10], normalized=False, expand_input_files=False, measures=[], skip=[], exclude=[], length=0, verbose=False):
+def get_delta_frame(dir_template, ep, seeds=[0,10], expand_input_files=False, measures=[], skip=[], exclude=[], length=0, verbose=False):
     success = []
     for seed in range(*seeds):
         if seed in skip:
@@ -243,7 +247,7 @@ def get_delta_frame(dir_template, ep, seeds=[0,10], normalized=False, expand_inp
 
                 df = df[(df['imageset']=='train')&(df['epoch']==ep)]
 
-                data = delta_data(df, normalized=normalized)
+                data, initial = delta_data(df)
                 
                 columns = (df.sort_values(by=['layer number'])['type']+'_'+df.sort_values(by=['layer number'])['layer number'].astype('str')).unique()
                 columns[0] = 'measure'
@@ -252,17 +256,19 @@ def get_delta_frame(dir_template, ep, seeds=[0,10], normalized=False, expand_inp
                 #print(data)
                 if seed == seeds[0]:
                     delta_df = pd.DataFrame(columns=columns, data=data)
+                    initial_df = pd.DataFrame(columns=['measure','initial'], data=initial)
                 else:
                     delta_df = delta_df.append(pd.DataFrame(columns=columns, data=data))
-                    
+                    initial_df = initial_df.append(pd.DataFrame(columns=['measure','initial'], data=initial))
+
                 if verbose:
                     print('success')
                     
                 success.append(seed)
                 
     print('success for seeds:', success)
-    
-    return delta_df
+
+    return delta_df, initial_df
 
 def plot_losses(log):
     train_loss, val_loss = get_losses(log)
@@ -270,13 +276,25 @@ def plot_losses(log):
     ax.set_xlabel('Epoch number')
     ax.set_ylabel('Error (%)')
     ax.set_title('Training curves')
-    
+   
+   
 def delta_plot(delta_df, x, y, name, minmax=True, hline=[-0.5,0.5], vline=[-3,3]):
     xy_df = delta_df[delta_df['measure']==x].melt('measure')
     y_df = delta_df[delta_df['measure']==y].melt('measure')
     xy_df['value2'] = y_df['value'].values
+    
+    xy_df['type'] = xy_df['variable'].apply(lambda x : x.split('_')[0])
+    xy_df['depth'] = xy_df['variable'].apply(lambda x : float(x.split('_')[1])).astype('float')
+    xy_df['depth'] = xy_df['variable'].apply(lambda x : float(x.split('_')[1])).astype('float')
+    
+    sns.reset_defaults()
 
-    ax = sns.scatterplot(x='value', y='value2', hue='variable', data=xy_df)
+#     unique_tags = xy_df['variable'].unique()
+#     p = sns.cubehelix_palette(len(unique_tags), light=.8, start=.5, rot=-.75)
+#     ax = sns.scatterplot(x='value', y='value2', hue='variable', style='type', palette=p, data=xy_df)
+
+    ax = sns.scatterplot(x='value', y='value2', hue='depth', style='type', legend='brief', data=xy_df)   
+    
     ax.set_xlabel('delta '+x.replace('_vec',''))
     ax.set_ylabel('delta '+y.replace('_vec',''))
     if minmax:
@@ -290,8 +308,31 @@ def delta_plot(delta_df, x, y, name, minmax=True, hline=[-0.5,0.5], vline=[-3,3]
         ax.vlines(0,*vline)
         ax.set_ylim(*vline)
     plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
-    ax.set_title('{}, d{} vs d{}'.format(name, x, y))
-    return ax
+    ax.set_title('{}, d{} vs d{}'.format(name, x, y)) 
+    return xy_df, ax
+
+   
+#def delta_plot(delta_df, x, y, name, minmax=True, hline=[-0.5,0.5], vline=[-3,3]):
+#    xy_df = delta_df[delta_df['measure']==x].melt('measure')
+#    y_df = delta_df[delta_df['measure']==y].melt('measure')
+#    xy_df['value2'] = y_df['value'].values
+#
+#    ax = sns.scatterplot(x='value', y='value2', hue='variable', data=xy_df)
+#    ax.set_xlabel('delta '+x.replace('_vec',''))
+#    ax.set_ylabel('delta '+y.replace('_vec',''))
+#    if minmax:
+#        ax.hlines(0,xy_df['value'].min()-.01,xy_df['value'].max()+.01)
+#        ax.set_ylim(xy_df['value'].min()-.01,xy_df['value'].max()+.01)
+#        ax.vlines(0,xy_df['value2'].min()-.01,xy_df['value2'].max()+.01)
+#        ax.set_ylim(xy_df['value2'].min()-.01,xy_df['value2'].max()+.01)
+#    else:
+#        ax.hlines(0,*hline)
+#        ax.set_xlim(*hline)
+#        ax.vlines(0,*vline)
+#        ax.set_ylim(*vline)
+#    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+#    ax.set_title('{}, d{} vs d{}'.format(name, x, y))
+#    return ax
     
 def catch(filepath, target, ind=1, verbose=False):
     parts = filepath.split('-')

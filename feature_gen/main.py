@@ -62,6 +62,8 @@ parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
+parser.add_argument('--freeze-at', '--fa', default=0, type=int,
+                    help='layer from the end of the network to freeze weights at.')
 parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
 parser.add_argument('--print-freq', '-p', default=20, type=int,
@@ -136,11 +138,26 @@ def main():
                 checkpoint = torch.load(args.resume)
             else:
                 checkpoint = torch.load(args.resume, map_location='cpu')
-            args.start_epoch = checkpoint['epoch']
+            # args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
-            model.load_state_dict(checkpoint['state_dict'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.evaluate, checkpoint['epoch']))
+           
+            # if freeze_at isn't 0, freeze weights for layers up to freeze_at from the last layer
+            if args.freeze_at != 0:
+                model_dict = model.state_dict()
+                freeze_at = len(list(model.parameters())) - args.freeze_at
+                pretrained_dict = {k: v for i, (k, v) in enumerate(checkpoint['state_dict'].items()) if i < freeze_at}
+                model_dict.update(pretrained_dict)
+                model.load_state_dict(model_dict)
+
+                for i, L in enumerate(model.parameters()):
+                    if i < freeze_at:
+                        print('layer {} params frozen.'.format(i))
+                        L.requires_grad = False
+            else:
+                model.load_state_dict(checkpoint['state_dict'])
+
+            print("=> loaded checkpoint (epoch {})"
+                  .format(checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -159,12 +176,13 @@ def main():
         model.half()
         criterion.half()
 
+    model_parameters = filter(lambda p: p.requires_grad,model.parameters())
     if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(model.parameters(), args.lr,
+        optimizer = torch.optim.SGD(model_parameters, args.lr,
                                     momentum=args.momentum,
                                     weight_decay=args.weight_decay)
     elif args.optimizer == 'ADAM':
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(model_parameters, lr=0.001, weight_decay=args.weight_decay)
 
 
     if args.sample_features:
