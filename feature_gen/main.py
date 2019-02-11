@@ -62,7 +62,7 @@ parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
-parser.add_argument('--freeze-at', '--fa', default=0, type=int,
+parser.add_argument('--freeze-upto', '-fu', dest='freeze_upto', default='none', type=str,
                     help='layer from the end of the network to freeze weights at.')
 parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
@@ -141,18 +141,28 @@ def main():
             # args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
            
-            # if freeze_at isn't 0, freeze weights for layers up to freeze_at from the last layer
-            if args.freeze_at != 0:
+            # if freeze_upto isn't 0, freeze weights for layers up to freeze_upto from the last layer
+            if args.freeze_upto != 'none':
                 model_dict = model.state_dict()
-                freeze_at = len(list(model.parameters())) - args.freeze_at
-                pretrained_dict = {k: v for i, (k, v) in enumerate(checkpoint['state_dict'].items()) if i < freeze_at}
+                pretrained_dict = {}
+
+                for name, L in model.named_parameters():
+                    if args.freeze_upto in name:
+                        break
+                    else:
+                        print('params {} loaded.'.format(name))
+                        pretrained_dict[name] = L
+
                 model_dict.update(pretrained_dict)
                 model.load_state_dict(model_dict)
 
-                for i, L in enumerate(model.parameters()):
-                    if i < freeze_at:
-                        print('layer {} params frozen.'.format(i))
+                for name, L in model.named_parameters():
+                    if args.freeze_upto in name:
+                        break
+                    else:
+                        print('params {} frozen.'.format(name))
                         L.requires_grad = False
+
             else:
                 model.load_state_dict(checkpoint['state_dict'])
 
@@ -160,6 +170,7 @@ def main():
                   .format(checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
+        return 
 
     cudnn.benchmark = True
     
