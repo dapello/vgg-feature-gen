@@ -170,7 +170,6 @@ def main():
                   .format(checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
-        return 
 
     cudnn.benchmark = True
     
