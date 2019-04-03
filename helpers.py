@@ -12,6 +12,8 @@ def match_strings(strings, path, any_or_all='any'):
         return all([string in path for string in strings])
 
 def load_data(mani_dir, exclude=[]):
+    # takes a directory and loads all the .mat files from batch_manifold_analysis.m
+    # return paths and data
     paths = np.sort(np.array(os.listdir(mani_dir)))
     if len(exclude)>0:
         paths = [path for path in paths if not match_strings(exclude, path)] 
@@ -31,6 +33,9 @@ def mi_outliers(data_vec):
             if np.abs(data_vec[i][j] - row_mean) > row_std*2:
                 data_vec[i][j] = row_mean
     return data_vec
+
+def fill_input_features(df, input_features=3072):
+    df['featnum'] = df['featnum'].fillna(value=input_features)
 
 def frame_constructor(paths, data, key, tag=None, mean=False, verbose=False, rm_outliers=True):
     perm_seed = [catch(path, 'seed') for path in paths]
@@ -149,8 +154,6 @@ def display(df, x, y, measure, coding, title, opts={'sortby':[], 'hue':'tag', 'f
     
     fig, ax = plt.subplots(figsize=opts['dims'])
     p = sns.cubehelix_palette(len(unique_tags), start=1, rot=0, dark=.20, light=.80)
-#    p = sns.light_palette("red")
-    # sns.set_palette(sns.light_palette("red"))
     sns.set_palette('Reds')
     with sns.color_palette("PuBuGn_d"):
         ax = sns.scatterplot(x=x, 
@@ -160,7 +163,7 @@ def display(df, x, y, measure, coding, title, opts={'sortby':[], 'hue':'tag', 'f
                          sizes=(150,150),
                          ax=ax,
                          hue=opts['hue'],
-                         #palette=p,
+                         palette=p,
                          legend='brief',
                          data=data)
 
