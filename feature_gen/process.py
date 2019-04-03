@@ -9,6 +9,8 @@ sortBy = sys.argv[2]
 last_epoch = '-ep_{}-'.format(sys.argv[3])
 seed = int(sys.argv[4])
 NUM_SUB_TARGET_DIRS = int(sys.argv[5])
+FEATURE_MAX = int(sys.argv[6])
+RP = int(sys.argv[7])
 
 print("running script: ", sys.argv[0])
 print("experiment tag: ", tag)
@@ -16,6 +18,8 @@ print("sort criteria: ", sortBy)
 print("last epoch: ", last_epoch)
 print("seed: ", seed)
 print("subfolders: ", NUM_SUB_TARGET_DIRS)
+print("max feature size: ", FEATURE_MAX)
+print("Random Projection: ", RP)
 
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
 DATA_DIR = './{}/'.format(tag)
@@ -94,7 +98,7 @@ def main():
                         os.makedirs(target_dir)
 
                     new_file = layer_paths[-1].replace('-step_0-', '-').replace('Linear', 'Softmax')
-                    print('new_filet', new_file)
+                    print('new_file', new_file)
                     new_file = layer_paths[0].replace('-step_0-', '-').replace('Linear', 'Softmax')
                     new_path = target_dir+new_file
 
@@ -154,12 +158,10 @@ def load_and_sort(data_dir, strings, downsample=False):
     paths = get_paths(data_dir, strings)
     label_paths = get_paths(data_dir, [last_epoch, 'labels'])
     data = load_paths(data_dir, paths)
-    print('p',data_dir,data.shape)
     if downsample:
         data = ds.downsample(data)
 
     label_data = load_paths(data_dir, label_paths)
-    print('l',label_data.shape)
     data_sorted = label_sort(label_data, data)
     print('Loaded and sorted {} data. Shape:{}'.format(strings, data_sorted.shape))
     return data_sorted
@@ -242,29 +244,45 @@ def apply_order(layer_data, orders):
     print('reordered data!')
     return ordered_layer_data
 
+def random_projection(X, N_cur):
+    N = X.shape[1]  # original feature #
+    W = np.random.randn(N, N_cur) # randn([pix # x neuron #])
+    W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
+    return np.dot(X,W) # project stimuli onto W
+
 class Downsampler(object):
-    def __init__(self, **kwargs):
+    def __init__(self, samples=5000, RP=False):
         self.keys = []
         self.perms_dict = {}
-        self.samples=5000
+        self.samples = samples
+        self.RP = RP
 
     def downsample(self, layer):
         np.random.seed(seed)
-        print('original layer shape: {}'.format(layer.shape))
         fsize = layer.shape[-1]
-        if fsize > self.samples:
-            if fsize in self.keys:
-                print('using perm for layer size: ',fsize)
-                perm = self.perms_dict[fsize]
+        print('original layer shape: {}'.format(layer.shape))
+        if self.RP:
+            print('Randomly projecting data.')
+            if fsize > self.samples:
+                # if we need to downsample, random project to self.samples size
+                layer = random_projection(layer, self.samples)
             else:
-                print('creating new perm for layer size: ',fsize)
-                perm = np.sort(np.random.permutation(fsize)[:self.samples])
-                self.keys.append(fsize)
-                self.perms_dict[fsize] = perm
-            layer = layer[:,perm]
+                # else just random project (rotate) to same size, for consistency.
+                layer = random_projection(layer, fsize)
+        else:
+            if fsize > self.samples:
+                if fsize in self.keys:
+                    print('using perm for layer size: ',fsize)
+                    perm = self.perms_dict[fsize]
+                else:
+                    print('creating new perm for layer size: ',fsize)
+                    perm = np.sort(np.random.permutation(fsize)[:self.samples])
+                    self.keys.append(fsize)
+                    self.perms_dict[fsize] = perm
+                layer = layer[:,perm]
         print('new layer shape: {}'.format(layer.shape)) 
         return layer
 
 if __name__ == '__main__':
-    ds = Downsampler()
+    ds = Downsampler(samples=FEATURE_MAX, RP=RP)
     main()

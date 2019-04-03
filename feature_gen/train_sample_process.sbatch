@@ -43,13 +43,12 @@ do
         # for epoch in 0 1 2 4 8 16 32 64 100
         do
             python main.py --archclass=vgg_s -a=${model} --resume=${save_dir}/checkpoint_${epoch}.tar  -gpu -s --start-epoch=${epoch}  --feature-dir=$feature_dir -d=${dataset} --classes=${classes} --invert=0
-            # python main.py -a=vgg16  --pretrained  -gpu -s --start-epoch=30  --feature-dir=tfeature_dir  -b=16  -d=HvM64
         done
         
         # process resultant feature dirs
         #python process.py $feature_dir betasoftmax $epochs ${i} 100
         #python process.py $feature_dir reversebetasoftmax $epochs ${i} 100
-        python process.py $feature_dir random $epochs ${i} 100
+        python process.py $feature_dir random $epochs ${i} 100 5000
         # rm -r $feature_dir
     done
 done

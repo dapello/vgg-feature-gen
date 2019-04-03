@@ -25,7 +25,7 @@ model_names = sorted(name for name in vgg.__dict__
                      and name.startswith("vgg")
                      and callable(vgg.__dict__[name]))
 
-data_sets = ['CIFAR10', 'CIFAR100', 'MNIST', 'HvM64']
+data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6']
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--archclass', '-ac', metavar='ARCHCLASS', default='vgg_s')
@@ -70,6 +70,12 @@ parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 20)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
+parser.add_argument('--repepoch', dest='replacement_epoch', default='', type=str, metavar='PATH',
+                    help='path to replacement checkpoint (default: none)')
+parser.add_argument('--replayer', dest='replace_layer', default='', type=str,
+                    help='layer to replace in model')
+parser.add_argument('--repweights', dest='replace_weights', action='store_true',
+                    help='whether or not to replace a layers weights in the model. requires ')
 parser.add_argument('-s', '--sample-features', dest='sample_features', action='store_true',
                     help='sample model features on unshuffled training and validation set')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
@@ -139,10 +145,30 @@ def main():
             else:
                 checkpoint = torch.load(args.resume, map_location='cpu')
             # args.start_epoch = checkpoint['epoch']
+
             best_prec1 = checkpoint['best_prec1']
-           
+          
+            if args.replace_weights:
+                model.load_state_dict(checkpoint['state_dict'])
+                
+                layer = 'features.' + args.replace_layer
+                replacement_epoch = args.replacement_epoch
+                model_i = vgg.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
+
+                if args.use_cuda:
+                    checkpoint_i = torch.load(replacement_epoch)
+                else:
+                    checkpoint_i = torch.load(replacement_epoch, map_location='cpu')
+
+                model_i.load_state_dict(checkpoint_i['state_dict'])
+                w_i = model_i.state_dict()[layer].data.clone()
+                model.state_dict()[layer].data.copy_(w_i)
+
+                print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
+                print("=> replaced {} weights with checkpoint (epoch {})".format(layer, checkpoint_i['epoch']))
+
             # if freeze_upto isn't 0, freeze weights for layers up to freeze_upto from the last layer
-            if args.freeze_upto != 'none':
+            elif args.freeze_upto != 'none':
                 model_dict = model.state_dict()
                 pretrained_dict = {}
 
@@ -211,7 +237,7 @@ def main():
                 print('applied forward hook to extract features from:{}'.format(name))
         
         sample(train_loader, model, criterion, args.start_epoch, 'train')
-        #sample(val_loader, model, criterion, args.start_epoch, 'val')
+        sample(val_loader, model, criterion, args.start_epoch, 'val')
         return
 
     if args.evaluate:
@@ -553,24 +579,73 @@ def construct_data_loaders(args):
                 100,
                 invert=args.invert
                 ))
+
     elif args.dataset == "MNIST":
-        ds = datasets.MNIST
-        # custom transforms
-    elif args.dataset == "HvM64":
+        train_dataset = datasets.MNIST(
+            root='./data/',
+            train=True,
+            transform=transforms.ToTensor(),
+            download=True,
+        )
+        
+        val_dataset = datasets.MNIST(
+            root='./data/',
+            train=False,
+            transform=transforms.ToTensor(),
+            download=True,
+        )
+
+    elif args.dataset == "EMNIST":
+        ## load MNIST data train and test sets
+        train_dataset = datasets.EMNIST(
+            root='./data/',
+            train=True,
+            transform=transforms.ToTensor(),
+            download=True,
+            split='balanced'
+        )
+        
+        val_dataset = datasets.EMNIST(
+            root='./data/',
+            train=False,
+            transform=transforms.ToTensor(),
+            download=True,
+            split='balanced'
+        )
+
+    elif "HvM64" in args.dataset:
         trans = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize([224,224]),
+            #transforms.Resize([224,224]),
             transforms.ToTensor(),
             transforms.Normalize((0.44688916, 0.44688916, 0.44688916),(0.17869806, 0.17869806, 0.17869806))
         ])
 
-        data = loadmat('data/HvM_128px.mat')
-        #V = 'V0'
-        #X = torch.Tensor(data['imgs'][data['obj_version']==V].transpose(0,3,1,2))
-        X = torch.Tensor(data['imgs'].transpose(0,3,1,2))
+        data = loadmat('data/HvM_224px.mat')
+        # HvM is the same for all 3 channels, so it was saved as 1 channel to reduce size. reconstruct 3 channels for vgg16
+        data['imgs'] = np.array([data['imgs'], data['imgs'], data['imgs']]).transpose(1,2,3,0)
+        
+        if 'V0' in args.dataset:
+            V = 'V0'
+            X = torch.Tensor(data['imgs'][data['obj_version']==V].transpose(0,3,1,2))
+            Y = data['obj_id'][data['obj_version']==V]
+            print('Loading HvM V0 data')
+        elif 'V3' in args.dataset:
+            V = 'V3'
+            X = torch.Tensor(data['imgs'][data['obj_version']==V].transpose(0,3,1,2))
+            Y = data['obj_id'][data['obj_version']==V]
+            print('Loading HvM V3 data')
+        elif 'V6' in args.dataset:
+            V = 'V6'
+            X = torch.Tensor(data['imgs'][data['obj_version']==V].transpose(0,3,1,2))
+            Y = data['obj_id'][data['obj_version']==V]
+            print('Loading HvM V6 data')
+        else:
+            X = torch.Tensor(data['imgs'].transpose(0,3,1,2))
+            Y = data['obj_id']
+            print('Loading HvM all data')
+
         X = torch.stack([trans(x) for x in X])
-        #Y = data['obj_id'][data['obj_version']==V]
-        Y = data['obj_id']
 
         # convert Y to a unique integer for a give label
         labels = list(np.unique(Y))

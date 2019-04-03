@@ -6,7 +6,7 @@ import math
 import torch.nn as nn
 import torch.nn.init as init
 
-__all__ = ['VGG', 'vgg', 'vgg_s']
+__all__ = ['VGG', 'vgg', 'vgg_s', 'fc']
 
 IN_CHANNELS = 3
 CLASSES = 10
@@ -68,20 +68,46 @@ class VGG_s(nn.Module):
         x = self.classifier(x)
         return x
 
+class FC(nn.Module):
+    '''
+    fully connected model 
+    '''
+    def __init__(self, features, linear_in=256, dropout=0.0, classes=CLASSES):
+        super(FC, self).__init__()
+        self.features = features
+        print('dropout = {}'.format(dropout))
+        self.classifier = nn.Sequential(
+            nn.Linear(linear_in, classes), 
+        )
 
-def make_layers(cfg, batchnorm=False):
+    def forward(self, x):
+        x = x.view(-1, 28*28)
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
+
+def make_layers(cfg, arch='vgg', batchnorm=False):
     layers = []
     in_channels = IN_CHANNELS
-    for v in cfg:
-        if v == 'M':
-            layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-        else:
-            conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
-            if batchnorm:
-                layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+    if arch == 'vgg':
+        for v in cfg:
+            if v == 'M':
+                layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                layers += [conv2d, nn.ReLU(inplace=True)]
-            in_channels = v
+                conv2d = nn.Conv2d(in_channels, v, kernel_size=3, padding=1)
+                if batchnorm:
+                    layers += [conv2d, nn.BatchNorm2d(v), nn.ReLU(inplace=True)]
+                else:
+                    layers += [conv2d, nn.ReLU(inplace=True)]
+                in_channels = v
+
+    elif arch == 'fc':
+        input_size = 784   ## yucky hard coded for MNIST
+        for v in cfg:
+            linear = nn.Linear(input_size, v)
+            layers += [linear, nn.ReLU(inplace=True)]
+            input_size = v
+
     return nn.Sequential(*layers)
 
 cfg = {
@@ -107,7 +133,9 @@ cfg = {
 
     'vgg19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 
-    'stuck': [16, 'M', 32, 'M', 32, 'M']
+    'stuck': [16, 'M', 32, 'M', 32, 'M'],
+    'fc5': [256, 256, 256, 256, 256]
+    'fc7w': [512, 512, 512, 512, 512]
 }
 
 in_num = {
@@ -133,6 +161,8 @@ in_num = {
     
     'vgg19': 512, 
     'stuck': 512, 
+    'fc5': 256, 
+    'fc7w': 512
 }
 
 def vgg(model, classes=CLASSES, batchnorm=False, dropout=0.0):
@@ -141,3 +171,6 @@ def vgg(model, classes=CLASSES, batchnorm=False, dropout=0.0):
 
 def vgg_s(model, classes=CLASSES, batchnorm=False, dropout=0.0):
     return VGG_s(make_layers(cfg[model], batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)
+
+def fc(model, classes=CLASSES, batchnorm=False, dropout=0.0):
+    return FC(make_layers(cfg[model], arch='fc', batchnorm=batchnorm), linear_in=in_num[model], dropout=dropout, classes=classes)
