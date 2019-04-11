@@ -50,7 +50,7 @@ parser.add_argument('--batchnorm', default=0, type=int,
                     help='If true, construct networks with batchnorm.')
 parser.add_argument('--dropout', default=0.0, type=float,
                     help='probability of dropout')
-parser.add_argument('--dataaug', default=1, type=int,
+parser.add_argument('--dataaug', action='store_true',
                     help='whether or not to train with data augmentation')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
@@ -75,23 +75,26 @@ parser.add_argument('--repepoch', dest='replacement_epoch', default='', type=str
 parser.add_argument('--replayer', dest='replace_layer', default='', type=str,
                     help='layer to replace in model')
 parser.add_argument('--repweights', dest='replace_weights', action='store_true',
-                    help='whether or not to replace a layers weights in the model. requires ')
+                    help='whether or not to replace a layers weights in the model.')
 parser.add_argument('-s', '--sample-features', dest='sample_features', action='store_true',
                     help='sample model features on unshuffled training and validation set')
 parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
+parser.add_argument('--reinit-test', dest='reinit_test', action='store_true',
+                    help='evaluate model on validation set with each layer reinitialized to epoch 0')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
-parser.add_argument('--half', dest='half', action='store_true',
-                    help='use half-precision(16-bit) ')
 parser.add_argument('-gpu', '--use-cuda', dest='use_cuda', action='store_true',
-                    help='use cuda')
+                    help='use cuda -- deprecated, always uses GPU+cuda')
 parser.add_argument('--save-dir', dest='save_dir',
                     help='The directory used to save the trained models',
                     default='save_temp', type=str)
 parser.add_argument('--feature-dir', dest='feature_dir',
                     help='The directory used to save the extracted features',
                     default='feature_temp', type=str)
+parser.add_argument('--results-dir', dest='results_dir',
+                    help='The directory used to save results ie from reinit test',
+                    default='result_temp', type=str)
 
 
 best_prec1 = 0
@@ -100,28 +103,20 @@ best_prec1 = 0
 outputs = {}
 outputs['inputs'] = []
 outputs['labels'] = []
- 
+def set_seed(seed):
+    # repeatability, damnit
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
 
 def main():
     global args, outputs, samplePoints, best_prec1
     args = parser.parse_args()
+    print('running main.py with args:', args)
 
-    # repeatability, damnit
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.use_cuda:
-        torch.cuda.manual_seed(args.seed)
-    
-    print('cuda',args.use_cuda)
-
-    # Check the save_dir exists or not
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
-
-    # Check the feature_dir exists or not
-    if not os.path.exists(args.feature_dir):
-        os.makedirs(args.feature_dir)
+    set_seed(args.seed) 
+    construct_filesystem(args)
 
     if args.pretrained:
         model = torchvision.models.vgg16(pretrained=True)
@@ -129,12 +124,9 @@ def main():
     else:
         model = vgg.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
 
+    model.cuda()
+
     print('>>> Model Parameters: {}'.format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
-    # model.features = torch.nn.DataParallel(model.features)
-
-
-    if args.use_cuda:
-        model.cuda()
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -155,10 +147,7 @@ def main():
                 replacement_epoch = args.replacement_epoch
                 model_i = vgg.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
 
-                if args.use_cuda:
-                    checkpoint_i = torch.load(replacement_epoch)
-                else:
-                    checkpoint_i = torch.load(replacement_epoch, map_location='cpu')
+                checkpoint_i = torch.load(replacement_epoch)
 
                 model_i.load_state_dict(checkpoint_i['state_dict'])
                 w_i = model_i.state_dict()[layer].data.clone()
@@ -201,16 +190,8 @@ def main():
     
     train_loader, val_loader = construct_data_loaders(args)
 
-
     # define loss function (criterion) and pptimizer
-    if args.use_cuda:
-        criterion = nn.CrossEntropyLoss().cuda()
-    else:
-        criterion = nn.CrossEntropyLoss()#.cuda()
-    
-    if args.half:
-        model.half()
-        criterion.half()
+    criterion = nn.CrossEntropyLoss().cuda()
 
     model_parameters = filter(lambda p: p.requires_grad,model.parameters())
     if args.optimizer == 'SGD':
@@ -239,6 +220,11 @@ def main():
         sample(train_loader, model, criterion, args.start_epoch, 'train')
         sample(val_loader, model, criterion, args.start_epoch, 'val')
         return
+    
+    if args.reinit_test:
+        print('running the test!')
+        run_reinit_test(vgg, args, val_loader, criterion)
+        return
 
     if args.evaluate:
         validate(val_loader, model, criterion)
@@ -253,6 +239,8 @@ def main():
 
     for epoch in range(args.start_epoch, args.epochs):
         print('beginning epoch: ', epoch)
+        
+        # reshuffling procedure for subsampled CIFAR100
         if (args.dataset == 'CIFAR100'):
             if not (int(args.classes) == 100):
                 train_loader, val_loader = construct_data_loaders(args)
@@ -264,7 +252,7 @@ def main():
         clear(outputs)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion, epoch=epoch)
+        prec1, loss_avg = validate(val_loader, model, criterion, epoch=epoch)
         clear(outputs)
 
         # remember best prec@1 and save checkpoint
@@ -297,18 +285,11 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        if args.use_cuda:
-            #target = target.cuda(async=True)
-            target = target.cuda(async=True).long()
-            input_var = torch.autograd.Variable(input).cuda()
-        else:
-            target = target#.cuda(async=True)
-            input_var = torch.autograd.Variable(input)#.cuda()
+        target = target.cuda(async=True).long()
+        input_var = torch.autograd.Variable(input).cuda()
 
         #target_var = torch.autograd.Variable(target)
         target_var = torch.autograd.Variable(target).long()
-        if args.half:
-            input_var = input_var.half()
 
         # compute output
         output = model(input_var)
@@ -356,15 +337,9 @@ def validate(val_loader, model, criterion, epoch=None):
         outputs['inputs'].append(input.detach().cpu().numpy())
         outputs['labels'].append(target.detach().cpu().numpy())
 
-        if args.use_cuda:
-            target = target.cuda(async=True).long()
-            input_var = torch.autograd.Variable(input, volatile=True).cuda()
-        else:
-            target = target#.cuda(async=True)
-            input_var = torch.autograd.Variable(input, volatile=True)#.cuda()
+        target = target.cuda(async=True).long()
+        input_var = torch.autograd.Variable(input, volatile=True).cuda()
         target_var = torch.autograd.Variable(target, volatile=True).long()
-        if args.half:
-            input_var = input_var.half()
 
         # compute output
         output = model(input_var)
@@ -393,7 +368,7 @@ def validate(val_loader, model, criterion, epoch=None):
     print(' * Prec@1 {top1.avg:.3f}'
           .format(top1=top1))
 
-    return top1.avg
+    return top1.avg, losses.avg
 
 def sample(loader, model, criterion, epoch, image_set):
     """ 
@@ -412,13 +387,8 @@ def sample(loader, model, criterion, epoch, image_set):
         outputs['inputs'].append(input.detach().cpu().numpy())
         outputs['labels'].append(target.detach().cpu().numpy())
 
-        if args.use_cuda:
-            target = target.cuda(async=True).long()
-            input_var = torch.autograd.Variable(input, volatile=True).cuda()
-        else:
-            target = target#.cuda(async=True)
-            input_var = torch.autograd.Variable(input, volatile=True)#.cuda()
-        
+        target = target.cuda(async=True).long()
+        input_var = torch.autograd.Variable(input, volatile=True).cuda()
         target_var = torch.autograd.Variable(target, volatile=True).long()
 
         # compute output
@@ -456,6 +426,46 @@ def sample(loader, model, criterion, epoch, image_set):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
+
+def run_reinit_test(Model, args, loader, criterion):
+    # load model with weights from reinit_epoch_path
+    reinit_model = Model.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
+    reinit_model.cuda()
+    checkpoint = torch.load(args.replacement_epoch)
+    reinit_model.load_state_dict(checkpoint['state_dict'])
+    
+    # get pointers pointers to trainable weights in the model
+    weight_pointers = [name for name, L in reinit_model.named_parameters() if 'weight' in name]
+    
+    results = []
+    for weight_pointer in weight_pointers:
+        print('running reinit test for ', weight_pointer)
+        # load trained model
+        model = Model.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
+        model.cuda()
+        checkpoint = torch.load(args.resume)
+        model.load_state_dict(checkpoint['state_dict'])
+        
+        print('replaced', weight_pointer)
+        # get layer i epoch 0 weights
+        reinit_weights = reinit_model.state_dict()[weight_pointer].data.clone()
+        model.state_dict()[weight_pointer].data.copy_(reinit_weights)
+        
+        # and bias!
+        weight_pointer.replace('weight', 'bias')
+        if weight_pointer in [name for name, L in reinit_model.named_parameters()]:
+            print('replaced', weight_pointer)
+            reinit_weights = reinit_model.state_dict()[weight_pointer].data.clone()
+            model.state_dict()[weight_pointer].data.copy_(reinit_weights)
+
+        # evaluate on test set
+        prec1, loss_avg = validate(loader, model, criterion, epoch=args.start_epoch)
+        results.append([weight_pointer, prec1[0].item(), loss_avg])
+
+    pathname = os.path.join(args.results_dir,'reinit_test.h5') 
+    f = h5.File(pathname, 'w')
+    f.create_dataset('obj_arr', data=np.array(results))
+    f.close()
 
 class Extractor(object):
     def __init__(self, name):
@@ -781,6 +791,19 @@ def accuracy(output, target, topk=(1,)):
         correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
+
+def construct_filesystem(args):
+    # Check the save_dir exists or not
+    if not os.path.exists(args.save_dir):
+        os.makedirs(args.save_dir)
+
+    # Check the feature_dir exists or not
+    if not os.path.exists(args.feature_dir):
+        os.makedirs(args.feature_dir)
+
+    # Check the results_dir exists or not
+    if not os.path.exists(args.results_dir):
+        os.makedirs(args.results_dir)
 
 
 if __name__ == '__main__':

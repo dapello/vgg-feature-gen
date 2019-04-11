@@ -24,6 +24,7 @@ do
         classes=50
         drop=0
         epochs=50
+        RP=0
         tag=seed_${i}-drop_${drop}-dataset_${dataset}-classes_${classes}
         folder=network_data
         log=${folder}/${tag}-arch_${model}-log
@@ -41,7 +42,7 @@ do
         # process resultant feature dirs
         #python process.py $feature_dir betasoftmax $epochs ${i} 100
         #python process.py $feature_dir reversebetasoftmax $epochs ${i} 100
-        python process.py $feature_dir random $epochs ${i} 100 5000
-        #rm -r $feature_dir
+        python process.py $feature_dir random $epochs ${i} 100 5000 RP
+        rm -r $feature_dir
     done
 done

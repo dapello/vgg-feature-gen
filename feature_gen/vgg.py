@@ -15,7 +15,7 @@ class VGG(nn.Module):
     '''
     VGG model 
     '''
-    def __init__(self, features, linear_in=512, dropout=0.0, classes=CLASSES):
+    def __init__(self, features, linear_in=512, dropout=0.0, custom_weight_init=False, classes=CLASSES):
         super(VGG, self).__init__()
         self.features = features
         print('dropout = {}'.format(dropout))
@@ -26,15 +26,15 @@ class VGG(nn.Module):
             nn.ReLU(True),
             nn.Linear(512, classes),
         )
-         # Initialize weights
-        for m in self.modules():
-            print(m)
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                m.bias.data.zero_()
 
-
+        if custom_weight_init:
+             # Initialize weights
+            for m in self.modules():
+                print(m)
+                if isinstance(m, nn.Conv2d):
+                    n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                    m.weight.data.normal_(0, math.sqrt(2. / n))
+                    m.bias.data.zero_()
 
     def forward(self, x):
         x = self.features(x)
@@ -46,21 +46,22 @@ class VGG_s(nn.Module):
     '''
     VGG model with shallow classifier 
     '''
-    def __init__(self, features, linear_in=16384, dropout=0.0, classes=CLASSES):
+    def __init__(self, features, linear_in=16384, dropout=0.0, custom_weight_init=False, classes=CLASSES):
         super(VGG_s, self).__init__()
         self.features = features
         print('dropout = {}'.format(dropout))
         self.classifier = nn.Sequential(
             nn.Linear(linear_in, classes), # 65536 is number of inputs
         )
-         # Initialize weights
-        for m in self.modules():
-            print(m)
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                m.bias.data.zero_()
 
+        if custom_weight_init:
+             # Initialize weights
+            for m in self.modules():
+                print(m)
+                if isinstance(m, nn.Conv2d):
+                    n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                    m.weight.data.normal_(0, math.sqrt(2. / n))
+                    m.bias.data.zero_()
 
     def forward(self, x):
         x = self.features(x)
@@ -131,10 +132,11 @@ cfg = {
     'vggm5': [64, 'M', 128, 'M', 256, 'M', 512, 'M', 512, 'M'],
     'vgg11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
 
+    'vgg16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'vgg19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 
     'stuck': [16, 'M', 32, 'M', 32, 'M'],
-    'fc5': [256, 256, 256, 256, 256]
+    'fc5': [256, 256, 256, 256, 256],
     'fc7w': [512, 512, 512, 512, 512]
 }
 
@@ -159,6 +161,7 @@ in_num = {
     'vggm5': 512, 
     'vgg11': 512, 
     
+    'vgg16': 512, 
     'vgg19': 512, 
     'stuck': 512, 
     'fc5': 256, 

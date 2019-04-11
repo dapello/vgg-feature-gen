@@ -14,26 +14,27 @@ cd /om2/user/dapello/code/vgg-feature-gen/feature_gen
 #for ((i = 0; i <= 3; i++)); 
 for i in 0 
 do
-    model=fc5
-    dataset=EMNIST
-    classes=47
-    drop=0
-    epochs=50
-    tag=seed_${i}-drop_${drop}-dataset_${dataset}-classes_${classes}
-    folder=network_data
-    log=${folder}/${tag}-arch_${model}-log
-    save_dir=${folder}/${tag}-arch_${model}-save
-    feature_dir=${folder}/${tag}-arch_${model}-features
-    
-    touch $log
-    cat train_sample_process.sbatch >& $log
-    
-    # train
-    python main.py --seed=${i} --archclass=fc -a=${model} \
-        -d=${dataset}  --classes=$classes  \
-        --optimizer='SGD' --wd=0 --epochs=${epochs} \
-        --save-dir=$save_dir  --feature-dir=$feature_dir  \
-        -gpu \
-        |& tee -a $log   
-
+    for model in vgg4 vgg8 vgg16
+    do
+        dataset=CIFAR10
+        classes=10
+        drop=0
+        epochs=50
+        tag=seed_${i}-drop_${drop}-dataset_${dataset}-classes_${classes}
+        folder=network_data
+        log=${folder}/${tag}-arch_${model}-log
+        save_dir=${folder}/${tag}-arch_${model}-save
+        feature_dir=${folder}/${tag}-arch_${model}-features
+        
+        touch $log
+        cat train_sample_process.sbatch >& $log
+        
+        # train
+        python main.py --seed=${i} --archclass=vgg -a=${model} \
+            -d=${dataset}  --classes=$classes  \
+            --optimizer='SGD' --wd=0 --epochs=${epochs} \
+            --save-dir=$save_dir  --feature-dir=$feature_dir  \
+            -gpu \
+            |& tee -a $log   
+    done
 done
