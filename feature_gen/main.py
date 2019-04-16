@@ -452,11 +452,13 @@ def run_reinit_test(Model, args, loader, criterion):
         model.state_dict()[weight_pointer].data.copy_(reinit_weights)
         
         # and bias!
-        weight_pointer.replace('weight', 'bias')
+        weight_pointer = weight_pointer.replace('.weight', '.bias')
         if weight_pointer in [name for name, L in reinit_model.named_parameters()]:
             print('replaced', weight_pointer)
             reinit_weights = reinit_model.state_dict()[weight_pointer].data.clone()
             model.state_dict()[weight_pointer].data.copy_(reinit_weights)
+        else:
+            print(weight_pointer, "not found!")
 
         # evaluate on test set
         prec1, loss_avg = validate(loader, model, criterion, epoch=args.start_epoch)
@@ -484,18 +486,18 @@ def construct_data_loaders(args):
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomCrop(32, 4),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
             ])
         else:
             print('no data augmentation')
             train_transform=transforms.Compose([
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
             ])
 
         val_transform=transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+            transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
         ])
 
         train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=train_transform)
