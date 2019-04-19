@@ -203,6 +203,7 @@ def main():
 
 
     if args.sample_features:
+        import pdb; pdb.set_trace()
         for i, L in enumerate(model.features):
             # if 'ReLU' not in str(L) and "Dropout" not in str(L):
             name = 'features_'+str(i)+"_"+str(L)
