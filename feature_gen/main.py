@@ -203,20 +203,27 @@ def main():
 
 
     if args.sample_features:
-        import pdb; pdb.set_trace()
-        for i, L in enumerate(model.features):
-            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
-            name = 'features_'+str(i)+"_"+str(L)
-            extractor = Extractor(name)
-            L.register_forward_hook(extractor.extract)
-            print('applied forward hook to extract features from:{}'.format(name))
-
-        for i, L in enumerate(model.classifier):
-            if "Dropout" not in str(L):
-                name = 'classifier_'+str(i)+"_"+str(L)
+        if args.arch_class == 'resnet':
+            for i, L in enumerate(flatten(get_layers(model))):
+                name = 'features_'+str(i)+'_'+str(L)
                 extractor = Extractor(name)
                 L.register_forward_hook(extractor.extract)
                 print('applied forward hook to extract features from:{}'.format(name))
+
+        else:
+            for i, L in enumerate(model.features):
+                # if 'ReLU' not in str(L) and "Dropout" not in str(L):
+                name = 'features_'+str(i)+"_"+str(L)
+                extractor = Extractor(name)
+                L.register_forward_hook(extractor.extract)
+                print('applied forward hook to extract features from:{}'.format(name))
+
+            for i, L in enumerate(model.classifier):
+                if "Dropout" not in str(L):
+                    name = 'classifier_'+str(i)+"_"+str(L)
+                    extractor = Extractor(name)
+                    L.register_forward_hook(extractor.extract)
+                    print('applied forward hook to extract features from:{}'.format(name))
         
         sample(train_loader, model, criterion, args.start_epoch, 'train')
         sample(val_loader, model, criterion, args.start_epoch, 'val')
@@ -794,6 +801,22 @@ def accuracy(output, target, topk=(1,)):
         correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
+
+def get_layers(tree):
+    children = list(tree.children())
+    if len(children) > 0:
+        return [follow(child) for child in children]
+    else:
+        return tree
+    
+def flatten(aList):
+    t = []
+    for i in aList:
+        if not isinstance(i, list):
+             t.append(i)
+        else:
+             t.extend(flatten(i))
+    return t
 
 def construct_filesystem(args):
     # Check the save_dir exists or not

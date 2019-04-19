@@ -98,6 +98,8 @@ def frame_constructor(paths, data, key, tag=None, mean=False, verbose=False, rm_
     df['seed'] = pd.to_numeric(df['seed'], errors='coerce')
     df['featnum'] = pd.to_numeric(df['featnum'], errors='coerce')
     df['layer number'] = pd.to_numeric(df['layer number'], errors='coerce')
+    df['layer number og'] = pd.to_numeric(df['layer number'], errors='coerce')
+    df['layer name'] = df['coding'].values + '.'+  df['layer number og'].astype('str').values
     df.loc[df['coding']=='features', 'layer number'] += 1
     df.loc[df['coding']=='classifier', 'layer number'] = df.loc[
         df['coding']=='classifier', 'layer number'] + df[
