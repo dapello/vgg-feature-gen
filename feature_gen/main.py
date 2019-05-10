@@ -25,7 +25,7 @@ model_names = sorted(name for name in vgg.__dict__
                      and name.startswith("vgg")
                      and callable(vgg.__dict__[name]))
 
-data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6']
+data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6', 'HvM64.r', 'HvM64_V0.r', 'HvM64_V3.r', 'HvM64_V6.r']
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--archclass', '-ac', metavar='ARCHCLASS', default='vgg_s')
@@ -63,6 +63,8 @@ parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--freeze-upto', '-fu', dest='freeze_upto', default='none', type=str,
+                    help='layer from the end of the network to freeze weights at.')
+parser.add_argument('--freeze-after', '-fa', dest='freeze_after', default='none', type=str,
                     help='layer from the end of the network to freeze weights at.')
 parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
@@ -132,10 +134,7 @@ def main():
     if args.resume:
         if os.path.isfile(args.resume):
             print("=> loading checkpoint '{}'".format(args.resume))
-            if args.use_cuda:
-                checkpoint = torch.load(args.resume)
-            else:
-                checkpoint = torch.load(args.resume, map_location='cpu')
+            checkpoint = torch.load(args.resume)
             # args.start_epoch = checkpoint['epoch']
 
             best_prec1 = checkpoint['best_prec1']
@@ -186,6 +185,21 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+        print('freeze after:', args.freeze_after)
+
+    if args.freeze_after != 'none':
+        freeze = False
+        for name, L in model.named_parameters():
+            if args.freeze_after in name:
+                freeze = True
+            
+            if freeze:
+                print('params {} frozen.'.format(name))
+                L.requires_grad = False
+            else:
+                print('params {} not frozen.'.format(name))
+
+
     cudnn.benchmark = True
     
     train_loader, val_loader = construct_data_loaders(args)
@@ -203,9 +217,9 @@ def main():
 
 
     if args.sample_features:
-        if args.arch_class == 'resnet':
+        if args.archclass == 'resnet':
             for i, L in enumerate(flatten(get_layers(model))):
-                name = 'features_'+str(i)+'_'+str(L)
+                name = 'classifier_'+str(i)+'_'+str(L)
                 extractor = Extractor(name)
                 L.register_forward_hook(extractor.extract)
                 print('applied forward hook to extract features from:{}'.format(name))
@@ -664,6 +678,11 @@ def construct_data_loaders(args):
             X = torch.Tensor(data['imgs'].transpose(0,3,1,2))
             Y = data['obj_id']
             print('Loading HvM all data')
+        
+        if '.r' in args.dataset:
+            ## rand perm labels? try this!
+            rand = torch.randperm(Y.shape[0])
+            Y = Y[rand]
 
         X = torch.stack([trans(x) for x in X])
 
@@ -805,7 +824,7 @@ def accuracy(output, target, topk=(1,)):
 def get_layers(tree):
     children = list(tree.children())
     if len(children) > 0:
-        return [follow(child) for child in children]
+        return [get_layers(child) for child in children]
     else:
         return tree
     
