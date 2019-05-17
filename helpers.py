@@ -11,14 +11,40 @@ def match_strings(strings, path, any_or_all='any'):
     elif any_or_all == 'all':
         return all([string in path for string in strings])
 
+def fix(datum, path):
+    ## hopefully vestigial code used previously used in load_data to fix a massive diagonal EV matrix. 
+    if datum['EV_vec'].shape[0] > 1:
+        print('fixing EV_vec')
+        print(datum['EV_vec'].shape)
+        print(path)
+        datum['EV_vec'] = np.diag(datum['EV_vec'])
+        savemat(path, datum, appendmat=False)
+    return datum
+
 def load_data(mani_dir, exclude=[]):
     # takes a directory and loads all the .mat files from batch_manifold_analysis.m
     # return paths and data
     paths = np.sort(np.array(os.listdir(mani_dir)))
     if len(exclude)>0:
         paths = [path for path in paths if not match_strings(exclude, path)] 
-    data = np.array([loadmat(mani_dir+path) for path in paths])
-    return paths, data
+    data = []
+    for path in paths:
+        datum = loadmat(mani_dir+path)
+        if 'EV_vec' in datum.keys():
+            #datum = fix(datum, mani_dir+path)
+            pass
+        data.append(datum)
+        
+    return paths, np.array(data)
+
+#def load_data(mani_dir, exclude=[]):
+#    # takes a directory and loads all the .mat files from batch_manifold_analysis.m
+#    # return paths and data
+#    paths = np.sort(np.array(os.listdir(mani_dir)))
+#    if len(exclude)>0:
+#        paths = [path for path in paths if not match_strings(exclude, path)] 
+#    data = np.array([loadmat(mani_dir+path) for path in paths])
+#    return paths, data
 
 def get_layer_type(path, types):
     for t in types:
@@ -42,6 +68,7 @@ def frame_constructor(paths, data, key, tag=None, mean=False, verbose=False, rm_
     featnum = [catch(path, 'featnum') for path in paths]
     acc = [catch(path, 'acc') for path in paths]
     arch = [catch(path, 'arch') for path in paths]
+    RP = [catch(path, 'RP') for path in paths]
     lnum = [path.split('-')[3].split('_')[1] for path in paths]
     coding = [path.split('-')[3].split('_')[0] for path in paths]
     epochs = np.array([int(path.split('-')[1].split('_')[1]) for path in paths])
@@ -71,6 +98,7 @@ def frame_constructor(paths, data, key, tag=None, mean=False, verbose=False, rm_
             'featnum', 
             'acc', 
             'arch', 
+            'RP', 
             'value', 
             'measure',
             'tag'
@@ -85,12 +113,13 @@ def frame_constructor(paths, data, key, tag=None, mean=False, verbose=False, rm_
             np.repeat([featnum],data_vec.shape[-1],axis=0).T.reshape(-1),
             np.repeat([acc],data_vec.shape[-1],axis=0).T.reshape(-1),
             np.repeat([arch],data_vec.shape[-1],axis=0).T.reshape(-1),
+            np.repeat([RP],data_vec.shape[-1],axis=0).T.reshape(-1),
             data_vec.reshape(-1),
             np.repeat(key,data_vec.size),
             np.repeat(tag,data_vec.size)
         ]).T
     )
-    types = ['input', 'MaxPool2d', 'Conv2d', 'ReLU', 'Linear', 'BatchNorm2d', 'Softmax']
+    types = ['input', 'AvgPool2d', 'MaxPool2d', 'Conv2d', 'ReLU', 'Sequential', 'Linear', 'BatchNorm2d', 'Softmax']
     df['type'] = df.path.apply(lambda x: get_layer_type(x, types))
     df['value'] = pd.to_numeric(df['value'], errors='coerce')
     df['acc'] = pd.to_numeric(df['acc'], errors='coerce')
@@ -113,6 +142,7 @@ def compile_info(mani_dir, path):
     info = path.replace('.h5', '')
     info += '-seed_'+catch(mani_dir, 'seed', ind=1)
     info += '-arch_'+catch(mani_dir, 'arch')
+    info += '-RP_'+catch(mani_dir, 'RP')
     
     return info
 
@@ -176,11 +206,23 @@ def display(df, x, y, measure, coding, title, opts={'sortby':[], 'hue':'tag', 'f
         plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
     
     ax.set_title(title)
-    ax.set_ylabel('mean {}'.format(measure.replace('_vec','')))
+    ax.set_ylabel(names[measure])
     ax.set_xticks(ticks=range(len(data.type)/len(unique_tags)))
     ax.set_xticklabels(xlabels,rotation=90)
     ax.set_xlabel('layer type')
     return data, ax
+
+names = {
+    'D_pr': 'Total Data PR',
+    'D_expvar': 'Total Data EV Dimension',
+    'CCcorr': 'Mean Manifold Center Correlation',
+    'D_S_vec': 'Mean Category EV Dimension',
+    'Dpr_S_vec': 'Mean Category PR',
+    'R_S_vec': 'Mean Category Radius',
+    'D_M_vec': 'Mean Dichotomy Dimension',
+    'R_M_vec': 'Mean Dichotomy Radius',
+    'a_Mfull_vec': 'Mean Dichotomy Capacity',
+}
 
 def get_losses(log, epochs=300, accuracy=False):
     f = open(log)
