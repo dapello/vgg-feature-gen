@@ -23,7 +23,9 @@ print("Random Projection: ", RP)
 
 SUB_TARGET_DIRS = [str(i) for i in range(NUM_SUB_TARGET_DIRS)]
 DATA_DIR = './{}/'.format(tag)
-TARGET_DIR = tag.replace('features', "formatted_features-sort_{}/".format(sortBy))
+TARGET_DIR = tag.replace('features', "samplesd_{}-RP_{}-sample_{}-sort_{}-formatted_features/".format(seed, RP, FEATURE_MAX, sortBy))
+
+np.random.seed(seed)
 
 def main():
     if not os.path.exists(TARGET_DIR):
@@ -143,7 +145,7 @@ def load_paths(target_dir, paths):
     data = []
     for path in paths:
 #        print('path:', path)
-        datum = np.array(h5.File(target_dir+path)['obj_arr'])
+        datum = np.array(h5.File(target_dir+path, 'r')['obj_arr'])
 #        print('datum:', datum.shape)
         data.append(datum)
     return np.concatenate(data)
@@ -244,11 +246,21 @@ def apply_order(layer_data, orders):
     print('reordered data!')
     return ordered_layer_data
 
+#def random_projection(X, N_cur):
+#    N = X.shape[1]  # original feature #
+#    W = np.random.randn(N, N_cur) # randn([pix # x neuron #])
+#    W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
+#    return np.dot(X,W) # project stimuli onto W
+
 def random_projection(X, N_cur):
     N = X.shape[1]  # original feature #
     W = np.random.randn(N, N_cur) # randn([pix # x neuron #])
     W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
-    return np.dot(X,W) # project stimuli onto W
+    X_proj = np.zeros([X.shape[0],N_cur])
+    for i, x in enumerate(X):
+        X_proj[i, :] = np.dot(x,W)
+        
+    return X_proj
 
 class Downsampler(object):
     def __init__(self, samples=5000, RP=False):
