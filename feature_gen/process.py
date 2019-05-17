@@ -1,3 +1,4 @@
+print('run sample processing')
 import os
 
 import numpy as np
@@ -252,14 +253,33 @@ def apply_order(layer_data, orders):
 #    W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
 #    return np.dot(X,W) # project stimuli onto W
 
-def random_projection(X, N_cur):
-    N = X.shape[1]  # original feature #
-    W = np.random.randn(N, N_cur) # randn([pix # x neuron #])
-    W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
-    X_proj = np.zeros([X.shape[0],N_cur])
-    for i, x in enumerate(X):
-        X_proj[i, :] = np.dot(x,W)
+#def random_projection(X, N_cur):
+#    N = X.shape[1]  # original feature #
+#    W = np.random.randn(N, N_cur) # randn([pix # x neuron #])
+#    W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
+#    print('running random projection, X shape: {}, W shape: {}'.format(X.shape, W.shape))
+#    X_proj = np.zeros([X.shape[0],N_cur])
+#    for i, x in enumerate(X):
+#        X_proj[i, :] = np.dot(x,W)
         
+#    print('success!')
+#    return X_proj
+
+def random_projection(X, W, N_cur):
+    # stimuli number and original feature number
+    I, N = X.shape  
+
+    # specifiy resultant projection matrix
+    X_proj = np.zeros([I, N_cur])    
+    
+    # for each RP feature we want 
+    for j in range(N_cur):
+        # project each stimuli on to w
+        for i in range(I):
+            X_proj[i, j] = np.dot(X[i,:],W[:N,j])
+        
+    del X
+    
     return X_proj
 
 class Downsampler(object):
@@ -267,6 +287,12 @@ class Downsampler(object):
         self.keys = []
         self.perms_dict = {}
         self.samples = samples
+        if RP:
+            N = 224*224*64
+            W = np.random.randn(N,samples)
+            W = W/np.tile(np.sqrt((W**2).sum(axis=0)), [N,1]) # normalize columns of W
+            print('generated W! shape: ', W.shape)
+            self.W = W
         self.RP = RP
 
     def downsample(self, layer):
@@ -277,10 +303,10 @@ class Downsampler(object):
             print('Randomly projecting data.')
             if fsize > self.samples:
                 # if we need to downsample, random project to self.samples size
-                layer = random_projection(layer, self.samples)
+                layer = random_projection(layer, self.W, self.samples)
             else:
                 # else just random project (rotate) to same size, for consistency.
-                layer = random_projection(layer, fsize)
+                layer = random_projection(layer, self.W, fsize)
         else:
             if fsize > self.samples:
                 if fsize in self.keys:
@@ -296,5 +322,6 @@ class Downsampler(object):
         return layer
 
 if __name__ == '__main__':
+    print('Begin sample processing')
     ds = Downsampler(samples=FEATURE_MAX, RP=RP)
     main()
