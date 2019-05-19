@@ -17,10 +17,10 @@ import torch.backends.cudnn as cudnn
 import models
 from datasets import construct_data_loaders
 
-model_names = sorted(name for name in vgg.__dict__
+model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
                      and name.startswith("vgg")
-                     and callable(vgg.__dict__[name]))
+                     and callable(models.__dict__[name]))
 
 data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6', 'HvM64.r', 'HvM64_V0.r', 'HvM64_V3.r', 'HvM64_V6.r']
 
@@ -90,7 +90,7 @@ def main():
     if args.pretrained:
         model = torchvision.models.vgg16(pretrained=True)
     else:
-        model = vgg.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
+        model = models.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
 
     model.cuda()
 
@@ -108,7 +108,7 @@ def main():
             #    
             #    layer = 'features.' + args.replace_layer
             #    replacement_epoch = args.replacement_epoch
-            #    model_i = vgg.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
+            #    model_i = models.__dict__[args.archclass](args.arch, classes=args.classes, batchnorm=args.batchnorm, dropout=args.dropout)
 
             #    checkpoint_i = torch.load(replacement_epoch)
 
@@ -149,40 +149,37 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-        print('freeze after:', args.freeze_after)
-
     cudnn.benchmark = True
     
-    train_loader, val_loader = construct_data_loaders(args)
+    train_loader, val_loader = construct_data_loaders(args, sample=True)
 
     # define loss function (criterion) and pptimizer
     criterion = nn.CrossEntropyLoss().cuda()
 
-    if args.sample_features:
-        if args.archclass == 'resnet':
-            for i, L in enumerate(flatten(get_layers(model))):
-                name = 'classifier_'+str(i)+'_'+str(L)
+    if args.archclass == 'resnet':
+        for i, L in enumerate(flatten(get_layers(model))):
+            name = 'classifier_'+str(i)+'_'+str(L)
+            extractor = Extractor(name)
+            L.register_forward_hook(extractor.extract)
+            print('applied forward hook to extract features from:{}'.format(name))
+
+    else:
+        for i, L in enumerate(model.features):
+            # if 'ReLU' not in str(L) and "Dropout" not in str(L):
+            name = 'features_'+str(i)+"_"+str(L)
+            extractor = Extractor(name)
+            L.register_forward_hook(extractor.extract)
+            print('applied forward hook to extract features from:{}'.format(name))
+
+        for i, L in enumerate(model.classifier):
+            if "Dropout" not in str(L):
+                name = 'classifier_'+str(i)+"_"+str(L)
                 extractor = Extractor(name)
                 L.register_forward_hook(extractor.extract)
                 print('applied forward hook to extract features from:{}'.format(name))
-
-        else:
-            for i, L in enumerate(model.features):
-                # if 'ReLU' not in str(L) and "Dropout" not in str(L):
-                name = 'features_'+str(i)+"_"+str(L)
-                extractor = Extractor(name)
-                L.register_forward_hook(extractor.extract)
-                print('applied forward hook to extract features from:{}'.format(name))
-
-            for i, L in enumerate(model.classifier):
-                if "Dropout" not in str(L):
-                    name = 'classifier_'+str(i)+"_"+str(L)
-                    extractor = Extractor(name)
-                    L.register_forward_hook(extractor.extract)
-                    print('applied forward hook to extract features from:{}'.format(name))
-        
-        sample(train_loader, model, criterion, args.start_epoch, 'train')
-        sample(val_loader, model, criterion, args.start_epoch, 'val')
+    
+    sample(train_loader, model, criterion, args.start_epoch, 'train')
+    sample(val_loader, model, criterion, args.start_epoch, 'val')
     
 def sample(loader, model, criterion, epoch, image_set):
     """ 

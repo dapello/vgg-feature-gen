@@ -14,7 +14,7 @@ __all__ = ['construct_data_loaders']
 
 data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6', 'HvM64.r', 'HvM64_V0.r', 'HvM64_V3.r', 'HvM64_V6.r']
 
-def construct_data_loaders(args):
+def construct_data_loaders(args, sample=False):
     print("constructing dataset loaders: ", args.dataset)
     print('Data augmentation:', args.dataaug)
     if args.dataset == 'CIFAR10':
@@ -213,7 +213,7 @@ def construct_data_loaders(args):
         return
 
     shuffle = True
-    if args.sample_features:
+    if sample:
         shuffle = False
 
     # shuffle and augment training images during training

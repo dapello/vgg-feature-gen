@@ -25,7 +25,7 @@ model_names = sorted(name for name in models.__dict__
 
 data_sets = ['CIFAR10', 'CIFAR100', 'EMNIST', 'MNIST', 'HvM64', 'HvM64_V0', 'HvM64_V3', 'HvM64_V6', 'HvM64.r', 'HvM64_V0.r', 'HvM64_V3.r', 'HvM64_V6.r']
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+parser = argparse.ArgumentParser(description='PyTorch Network Training')
 parser.add_argument('--archclass', '-ac', metavar='ARCHCLASS', default='vgg_s')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg16')
 parser.add_argument('--dataset', '-d', metavar='ARCH', default='CIFAR10',
@@ -76,8 +76,6 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
 #                    help='layer to replace in model')
 #parser.add_argument('--repweights', dest='replace_weights', action='store_true',
 #                    help='whether or not to replace a layers weights in the model.')
-#parser.add_argument('-s', '--sample-features', dest='sample_features', action='store_true',
-#                    help='sample model features on unshuffled training and validation set')
 #parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
 #                    help='evaluate model on validation set')
 #parser.add_argument('--reinit-test', dest='reinit_test', action='store_true',
@@ -103,7 +101,7 @@ best_prec1 = 0
 def main():
     global args, samplePoints, best_prec1
     args = parser.parse_args()
-    print('running main.py with args:', args)
+    print('running train.py with args:', args)
 
     set_seed(args.seed) 
     construct_filesystem(args)
@@ -185,7 +183,7 @@ def main():
 
     cudnn.benchmark = True
     
-    train_loader, val_loader = construct_data_loaders(args)
+    train_loader, val_loader = construct_data_loaders(args, sample=False)
 
     # define loss function (criterion) and pptimizer
     criterion = nn.CrossEntropyLoss().cuda()
