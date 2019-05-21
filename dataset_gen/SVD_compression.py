@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import h5py as h5
 import numpy as np
@@ -7,6 +9,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
 factor = 1 ## take every n images
+target_dir = 'dataset_CIFAR100-SVD_input/'
 
 compute_pr = lambda S : (sum(S**2)**2)/sum(S**4)
 compute_EVD = lambda S, t : sum(np.cumsum((S**2)/sum(S**2))<t)
@@ -70,9 +73,21 @@ for i, (images, targets) in enumerate(train_loader):
     
     # downsample by a factor
     images = images[::factor,:]
-    images.shape
+    targets = targets.detach().numpy()
 
+print('images shape:', images.shape)
+
+# save the labels too
+save_h5('CIFAR100_labels.h5', targets)
+
+print('running SVD')
 U, S, V = np.linalg.svd(images)
+
+print('SVD complete')
+
+save_h5(os.path.join(target_dir, 'U.h5'),U)
+save_h5(os.path.join(target_dir, 'S.h5'),S)
+save_h5(os.path.join(target_dir, 'V.h5'),V)
 
 dim_ests = {
     'pr' : int(compute_pr(S)+1),
@@ -90,11 +105,11 @@ del images
 
 N = 10
 for key in dim_ests.keys():
-    save_path = 'CIFAR100-{}_{}components.h5'.format(key, dim_ests[key])
-    
+    save_path = os.path.join(target_dir, 'dimest_{}-components_{}.h5'.format(key, dim_ests[key]))
     # process images, reducing to estimated dimensionality
     images_hat = SVD_compress(U,S,V, dim_ests[key])
     images_hat = format_ims(images_hat)
+    print('save path: {}, images_hat shape {}'.format(save_path, images_hat))
     save_h5(save_path, images_hat)
     
     images_hat = scale(images_hat)
