@@ -143,6 +143,9 @@ def compile_info(mani_dir, path):
     info += '-seed_'+catch(mani_dir, 'seed', ind=1)
     info += '-arch_'+catch(mani_dir, 'arch')
     info += '-RP_'+catch(mani_dir, 'RP')
+    info += '-samplesd_'+catch(mani_dir, 'samplesd')
+    info += '-sample_'+catch(mani_dir, 'sample_')
+    info += '-dim_'+catch(mani_dir, 'dim_')
     
     return info
 
@@ -382,9 +385,13 @@ def delta_plot(delta_df, x, y, name, minmax=True, hline=[-0.5,0.5], vline=[-3,3]
 #    return ax
     
 def catch(filepath, target, ind=1, verbose=False):
-    parts = filepath.split('-')
+    filepath_ = filepath.replace('/','-')
+    parts = filepath_.split('-')
     match = [part for part in parts if target in part]
     if len(match) == 1:
+        return match[0].split('_')[ind]
+    elif len(match) > 1:
+        print('catch() found multiple matches, returning first.')
         return match[0].split('_')[ind]
     else:
         if verbose:
