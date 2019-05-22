@@ -67,6 +67,9 @@ parser.add_argument('--save-dir', dest='save_dir',
 parser.add_argument('--feature-dir', dest='feature_dir',
                     help='The directory used to save the extracted features',
                     default='feature_temp', type=str)
+parser.add_argument('--SVD-base-path', dest='SVD_base_path',
+                    help='The directory containing the SVD compressed representations',
+                    default='feature_temp', type=str)
 parser.add_argument('--results-dir', dest='results_dir',
                     help='The directory used to save results ie from reinit test',
                     default='result_temp', type=str)
@@ -185,16 +188,17 @@ def main():
     results = []
     # loop over layers in network
     for layer in ['input']: ## replaces with layers from the network model
-        
+        print('>> processing layer', layer)    
         SVD_layer_path = os.path.join(SVD_base_path, 'SVD_'+layer)
         dimests, dset_paths = get_SVD_sets(SVD_layer_path)
         
         # loop over SVD compressed representations
         for dimest, dset_path in zip(dimests,dset_paths):
+            print('>>>> processing dimest', dimest)    
             loader = create_loader(dset_path, args.batch_size)
 
             prec1, loss_avg = sample(loader, model, criterion, args.start_epoch, dimest)
-            results.append([dset_path, prec1[0].item(), loss_avg])
+            results.append([dset_path, prec1[0].item(), loss_avg[0].item()])
 
     
     pathname = os.path.join(args.results_dir,'SVD_test.h5') 

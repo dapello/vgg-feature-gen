@@ -264,9 +264,11 @@ def process_outputs(outputs):
     dataDict = {}
     for key in outputs:
         data = np.array(outputs[key]).astype('float16')
+        og_shape = data.shape
         data = np.reshape(data, (data.shape[0]*data.shape[1], -1))
-        print(key, data.shape)
-        dataDict[key] = data
+        key_ = key+'-ogshape_'+str(og_shape).replace(' ', '')
+        print(key_, data.shape)
+        dataDict[key_] = data
 
     return dataDict
     
