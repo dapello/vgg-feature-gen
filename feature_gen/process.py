@@ -1,16 +1,34 @@
 import os
+import argparse
 
 import numpy as np
 import h5py as h5
 import sys
 
-tag = sys.argv[1]
-sortBy = sys.argv[2]
-last_epoch = '-ep_{}-'.format(sys.argv[3])
-seed = int(sys.argv[4])
-NUM_SUB_TARGET_DIRS = int(sys.argv[5])
-FEATURE_MAX = int(sys.argv[6])
-RP = int(sys.argv[7])
+parser = argparse.ArgumentParser(description='Feature processing for samples from samples.py')
+parser.add_argument('--tag', dest='tag', help='tag for finding and naming features')
+parser.add_argument('--sortBy', dest='sortBy', default='random', 
+        help='how to sort the samples -- randomly, or by forward or reverse betasoftmax')
+parser.add_argument('--seed', dest='seed', default=0, type=int,
+                    help='random number generator seed')
+parser.add_argument('--last-epoch', dest='last_epoch', type=int, 
+                    help='Epoch number used for sorting stimuli')
+parser.add_argument('--num-target-dirs', dest='NUM_SUB_TARGET_DIRS', type=int, 
+                    help='Number of folders to distribute files to -- enables array processing down the line')
+parser.add_argument('--max-features', dest='FEATURE_MAX', type=int, 
+                    help='Max number features from representations to keep')
+parser.add_argument('--RP', dest='RP', type=int, default=0, 
+                    help='Whether or not to randomly project features for subsampling')
+
+args = parser.parse_args()
+
+tag = args.tag
+sortBy = args.sortBy
+last_epoch = '-ep_{}-'.format(args.last_epoch)
+seed = args.seed
+NUM_SUB_TARGET_DIRS = args.NUM_SUB_TARGET_DIRS
+FEATURE_MAX = args.FEATURE_MAX
+RP = args.RP
 
 print("running script: ", sys.argv[0])
 print("experiment tag: ", tag)
