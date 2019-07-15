@@ -85,13 +85,19 @@ def main():
             print('making dir: {}'.format(target_dir))
             os.makedirs(target_dir)
 
-        # save input images corresponding to the top n% manifold examples
+        # save input images corresponding to sorted representations 
         new_file = folder+'-input.h5' 
         new_path = target_dir+new_file
         f = h5.File(new_path, 'w')
         f.create_dataset('obj_arr', data=conf_ordered_input_data)
         f.close()
         
+        new_file = folder+'-labels.h5' 
+        new_path = target_dir+new_file
+        f = h5.File(new_path, 'w')
+        f.create_dataset('obj_arr', data=label_data)
+        f.close()
+
         j += 1
         # for all unique layers, load the data (concatenating steps across the epochs), apply downsample and sort, and save.
         for epoch in epochs:
@@ -171,6 +177,8 @@ def load_paths(target_dir, paths):
 def label_sort(label_data, layer_data):
     for label in np.unique(label_data).astype(int):
         guys = np.squeeze(label_data==label)
+
+    # :5000 caps number of examples per class -- useful for MNIST, which has different numbers of examples per class.
     label_sorted_data = np.array([layer_data[np.squeeze(label_data==label)][:5000,:] for label in np.unique(label_data).astype(int)])
     return label_sorted_data
 
