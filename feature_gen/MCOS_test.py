@@ -10,6 +10,7 @@ from scipy.io import loadmat
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 
@@ -41,6 +42,8 @@ parser.add_argument('--seed', dest='seed', default=0, type=int,
                     help='random number generator seed')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
+parser.add_argument('--epochs', default=300, type=int, metavar='N',
+                    help='number of total epochs to run')
 parser.add_argument('--batchnorm', default=0, type=int,
                     help='If true, construct networks with batchnorm.')
 parser.add_argument('--dropout', default=0.0, type=float,
@@ -49,6 +52,16 @@ parser.add_argument('--dataaug', action='store_true',
                     help='whether or not to train with data augmentation')
 parser.add_argument('-b', '--batch-size', default=128, type=int,
                     metavar='N', help='mini-batch size (default: 128)')
+parser.add_argument('--optimizer', metavar='OPT', default='SGD',
+                    choices=['SGD', 'ADAM'],
+                    help='Optimizer choices: ' + ' | '.join(['SGD', 'ADAM']) +
+                    ' (default: SGD)')
+parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
+                    metavar='LR', help='initial learning rate')
+parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                    help='momentum')
+parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
+                    metavar='W', help='weight decay (default: 5e-4)')
 parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 20)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -114,8 +127,6 @@ def main():
     
     # define loss function (criterion) and pptimizer
     criterion = nn.CrossEntropyLoss().cuda()
-
-    results = []
 
     # initialize original, trained model, get it's best score
     best_prec1, best_loss_avg, best_class_acc = sample(train_loader, model, criterion, args.start_epoch, 'Full')
@@ -190,11 +201,12 @@ def main():
                 build_OS_results = []
                 sample_n = 50
 
-                for component in np.arange(1,sample_n):
+                for component in np.arange(0,sample_n):
                     print('build component {} of {}'.format(component, name_to_match))
                     
                     # create model with bottleneck
-                    model_ = bottleneck_model(model, i, Q)
+                    model_ = bottleneck_model(model, i, Q, loc=part_name)
+                    model_.cuda()
                     freeze_trained_weights(model_)
 
                     model_parameters = filter(lambda p: p.requires_grad,model_.parameters())
@@ -204,7 +216,7 @@ def main():
                                weight_decay=args.weight_decay)
 
                     # train subspace
-                    for epoch in range(args.start_epoch, args.epochs):
+                    for epoch in range(0, args.epochs):
                         print('beginning epoch: ', epoch)
 
                         train_bottleneck_component(train_loader, model_, criterion, optimizer, epoch, component, l=1.0)
@@ -214,14 +226,15 @@ def main():
                         #prec1, loss_avg = validate_bottleneck(val_loader, model_, criterion, epoch=epoch)
 
                     ## ensure Q is orthonormalized and then check final validation acc
-                    Q = model_.estimator.weight.detach().numpy().T
+                    Q = model_.estimator.weight.cpu().detach().numpy().T
                     Q,R = np.linalg.qr(Q)
-                    model_ = bottleneck_model(model, i, Q)
+                    model_ = bottleneck_model(model, i, Q, loc=part_name)
+                    model_.cuda()
                     prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
                     #prec1, loss_avg = validate_bottleneck(val_loader, model_, criterion, epoch=epoch)
                 
                     # and a new random direction
-                    U = np.random.randn(128,1)
+                    U = np.random.randn(512,1)
         
                     # concatenate new random direction
                     Q_ = np.concatenate([Q,U],axis=1)
@@ -229,7 +242,6 @@ def main():
                     # and make it orthogonal to original Q
                     Q,R = np.linalg.qr(Q_)
 
-                    #prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
                     dist = 100*(best_prec1[0].item() - prec1[0].item())/best_prec1[0].item()
                     
                     print('dist:',dist)
@@ -242,16 +254,16 @@ def main():
                         loss_avg[0].item(), 
                         dist, 
                         best_prec1[0].item(), 
-                        class_acc,
-                        best_class_acc,
-                        U.shape[1]
+                        str(class_acc),
+                        str(best_class_acc),
+                        #U.shape[1]
                     ])
 
                 
-                pathname = os.path.join(args.results_dir,'MCOSS_test_50_{}.h5'.format(name_to_match)) 
+                pathname = os.path.join(args.results_dir,'MCOSS_test_{}_{}.h5'.format(sample_n, name_to_match)) 
                 print('saving results at ',pathname)
                 f = h5.File(pathname, 'w')
-                f.create_dataset('build_OS_result', data=np.array(build_OS_result))
+                f.create_dataset('build_OS_result', data=np.array(build_OS_results))
                 f.close()
                 print('results saved')
 
@@ -329,22 +341,19 @@ def train_bottleneck_component(train_loader, model, criterion, optimizer, epoch,
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
-        # measure data loading time
-        data_time.update(time.time() - end)
-
-        target = target.long()
-        input_var = torch.autograd.Variable(input)
+        target = target.cuda(async=True).long()
+        input_var = torch.autograd.Variable(input).cuda()
 
         #target_var = torch.autograd.Variable(target)
         target_var = torch.autograd.Variable(target).long()
 
         # compute output
-        output, = model(input_var)
+        output = model(input_var)
         loss = criterion(output, target_var)
         norm_loss = l*compute_norm_loss(model.estimator.weight)
         
-        orth_loss = l*ortho_cost_1(model.estimator.weight)
-#         orth_loss = l*FIP_cost(model.estimator.weight)
+        #orth_loss = l*ortho_cost_1(model.estimator.weight)
+        orth_loss = l*FIP_cost(model.estimator.weight)
         
         joint_loss = loss + norm_loss + orth_loss
         
@@ -368,7 +377,7 @@ def train_bottleneck_component(train_loader, model, criterion, optimizer, epoch,
         prec1 = accuracy(output.data, target)[0]
         losses.update(loss.data[0], input.size(0))
         norm_losses.update(norm_loss.data[0], input.size(0))
-        orth_losses.update(orth_loss.data[0], input.size(0))
+        orth_losses.update(orth_loss, input.size(0))
         top1.update(prec1[0], input.size(0))
 
         # measure elapsed time

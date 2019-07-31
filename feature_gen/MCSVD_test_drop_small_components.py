@@ -137,7 +137,7 @@ def main():
             # check if the SVD_rep file exists
             #if name_to_match in SVD_rep_paths:
             # if name_to_match in ['features_29_ReLU','features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
-            if name_to_match in ['classifier_1_ReLU', 'classifier_3_ReLU']:
+            if name_to_match in ['features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
             # if name_to_match in layer_names:
                 print('caught',name_to_match, i)
 
@@ -183,14 +183,11 @@ def main():
                         loss_avg[0].item(), 
                         dist, 
                         best_prec1[0].item(), 
-                        class_acc,
-                        best_class_acc,
+                        str(class_acc),
+                        str(best_class_acc),
                         U.shape[1]
                     ])
 
-                    print(class_acc)
-                    print(best_class_acc)
-                    return
                     if range_[0]>dist:
                         k -= np.int(np.abs(hist[-1] - hist[-2])/2)
                     if range_[1]<dist:
@@ -200,16 +197,17 @@ def main():
                 drop_n = lambda U, n, k : np.concatenate([U[:n,:],U[n+1:k,:]])
                 
                 drop_component_results = []
-                sample_n = 100
+                sample_n = 200
                 for n in np.arange(0,sample_n):
                     # n is the row to drop -- sample_n rows from 0 to ~k
                     # n = int(n*(k/sample_n))
                     # if n > k:
                     #     break
 
+                    print('U shape: {}'.format(U.shape))
                     print('drop component {} of {}'.format(n, name_to_match))
 
-                    model_ = VGG_pc_bottleneck(model, i, drop_n(U,n,k), loc=part_name)
+                    model_ = VGG_pc_bottleneck(model, i, drop_n(U,n,U.shape[0]), loc=part_name)
                     model_.cuda()
 
                     # sample model loss at rank k approximation for layer
@@ -226,8 +224,8 @@ def main():
                         loss_avg[0].item(), 
                         dist, 
                         best_prec1[0].item(), 
-                        class_acc,
-                        best_class_acc,
+                        str(class_acc),
+                        str(best_class_acc),
                         U.shape[1]
                     ])
 
@@ -246,7 +244,7 @@ def main():
                     # sample model loss at rank k approximation for layer
                     prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
                     dist = 100*(best_prec1[0].item() - prec1[0].item())/best_prec1[0].item()
-                    
+                #     
                     print('dist:',dist)
 
                     drop_last_results.append([
@@ -257,13 +255,13 @@ def main():
                         loss_avg[0].item(), 
                         dist, 
                         best_prec1[0].item(), 
-                        class_acc,
-                        best_class_acc,
+                        str(class_acc),
+                        str(best_class_acc),
                         U.shape[1]
                     ])
 
                 
-                pathname = os.path.join(args.results_dir,'MCSVD_test_play_allsmall100_{}.h5'.format(name_to_match)) 
+                pathname = os.path.join(args.results_dir,'MCSVD_test_play_allsmall200_{}.h5'.format(name_to_match)) 
                 print('saving results at ',pathname)
                 f = h5.File(pathname, 'w')
                 # f.create_dataset('search_results', data=np.array(results))
