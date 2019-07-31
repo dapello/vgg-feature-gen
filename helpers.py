@@ -145,7 +145,10 @@ def compile_info(mani_dir, path):
     info += '-RP_'+catch(mani_dir, 'RP')
     info += '-samplesd_'+catch(mani_dir, 'samplesd')
     info += '-sample_'+catch(mani_dir, 'sample_')
-    info += '-dim_'+catch(mani_dir, 'dim_')
+    try:
+        info += '-dim_'+catch(mani_dir, 'dim_')
+    except:
+        pass
     
     return info
 
