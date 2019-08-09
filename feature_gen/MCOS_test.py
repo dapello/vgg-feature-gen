@@ -131,6 +131,25 @@ def main():
     # initialize original, trained model, get it's best score
     best_prec1, best_loss_avg, best_class_acc = sample(train_loader, model, criterion, args.start_epoch, 'Full')
 
+    k_map = {
+            'features_1_ReLU': 65536,
+            'features_3_ReLU': 65536,
+            'features_6_ReLU': 32768,
+            'features_8_ReLU': 32768,
+            'features_11_ReLU': 16384,
+            'features_13_ReLU': 16384,
+            'features_15_ReLU': 16384,
+            'features_18_ReLU': 8192,
+            'features_20_ReLU': 8192,
+            'features_22_ReLU': 8192,
+            'features_25_ReLU': 2048,
+            'features_27_ReLU': 2048,
+            'features_29_ReLU': 2048,
+            'features_30_MaxPool2d': 512, 
+            'classifier_1_ReLU': 512, 
+            'classifier_3_ReLU': 512        
+    }
+
     # next, loop over feature layers in network
     for part_of_model, part_name in [[model.features, 'features'],[model.classifier, 'classifier']]:
         for i, L in enumerate(part_of_model):
@@ -139,7 +158,8 @@ def main():
             name_to_match = name.split('(')[0]
             print('name_to_match ',name_to_match )
             # if name_to_match in ['features_29_ReLU','features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
-            if name_to_match in ['classifier_1_ReLU', 'classifier_3_ReLU']:
+            #if name_to_match in ['features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
+            if name_to_match in ['features_1_ReLU', 'features_15_ReLU']:
                 print('caught',name_to_match, i)
 
                ## bisection like search for dim est
@@ -149,57 +169,14 @@ def main():
                # #scores = [100.0]
                # dist = 100.0 
 
-                k = 512
-               # 
-               # # need to get max prec1 first, define compare. . 
-               # limit = 15 
-               # counter = 0
-
-               # print('Entering while loop')
-               # while not (range_[0]<dist<range_[1]):
-               #     print('k=',k)
-               #     counter +=1
-               #     if counter > limit or k > maxK:
-               #         break
-               #     # create model with rank k approximator inserted at layer i
-               #     model_ = VGG_pc_bottleneck(model, i, U[:k], loc=part_name)
-               #     model_.cuda()
-
-               #     # sample model loss at rank k approximation for layer
-               #     prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
-               #     dist = 100*(best_prec1[0].item() - prec1[0].item())/best_prec1[0].item()
-               #     
-               #     print('dist:',dist)
-
-               #     hist.append(k)
-               #     #scores.append(prec1[0].item())
-               #     results.append([
-               #         name_to_match, 
-               #         k, 
-               #         prec1[0].item(), 
-               #         loss_avg[0].item(), 
-               #         dist, 
-               #         best_prec1[0].item(), 
-               #         class_acc,
-               #         best_class_acc,
-               #         U.shape[1]
-               #     ])
-
-               #     print(class_acc)
-               #     print(best_class_acc)
-               #     return
-               #     if range_[0]>dist:
-               #         k -= np.int(np.abs(hist[-1] - hist[-2])/2)
-               #     if range_[1]<dist:
-               #         k += np.int(np.abs(hist[-1] - hist[-2])/2)
-
+                k = k_map[name_to_match]
                 ## create first component
-                U = np.random.randn(512,1)
+                U = np.random.randn(k,1)
                 Q,R = np.linalg.qr(U)
                 print('Q.shape', Q.shape)
                 
                 build_OS_results = []
-                sample_n = 50
+                sample_n = k
 
                 for component in np.arange(0,sample_n):
                     print('build component {} of {}'.format(component, name_to_match))
@@ -233,14 +210,6 @@ def main():
                     prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
                     #prec1, loss_avg = validate_bottleneck(val_loader, model_, criterion, epoch=epoch)
                 
-                    # and a new random direction
-                    U = np.random.randn(512,1)
-        
-                    # concatenate new random direction
-                    Q_ = np.concatenate([Q,U],axis=1)
-                    
-                    # and make it orthogonal to original Q
-                    Q,R = np.linalg.qr(Q_)
 
                     dist = 100*(best_prec1[0].item() - prec1[0].item())/best_prec1[0].item()
                     
@@ -259,8 +228,21 @@ def main():
                         #U.shape[1]
                     ])
 
+                    if dist < 1:
+                        pathname = os.path.join(args.results_dir,'MCOS_W_{}_{}.h5'.format(sample_n, name_to_match)) 
+                        np.save(pathname, Q)
+                        break
+
+                    # and a new random direction
+                    U = np.random.randn(512,1)
+        
+                    # concatenate new random direction
+                    Q_ = np.concatenate([Q,U],axis=1)
+                    
+                    # and make it orthogonal to original Q
+                    Q,R = np.linalg.qr(Q_)
                 
-                pathname = os.path.join(args.results_dir,'MCOSS_test_{}_{}.h5'.format(sample_n, name_to_match)) 
+                pathname = os.path.join(args.results_dir,'MCOS_test_{}_{}.h5'.format(sample_n, name_to_match)) 
                 print('saving results at ',pathname)
                 f = h5.File(pathname, 'w')
                 f.create_dataset('build_OS_result', data=np.array(build_OS_results))
