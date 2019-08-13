@@ -136,10 +136,11 @@ def main():
     # initialize original, trained model, get it's best score
     best_prec1, best_loss_avg, best_class_acc = sample(train_loader, model, criterion, args.start_epoch, 'Full')
 
-    x_tests, x_test_advs, y_tests = gen_adv_inputs(model, val_loader, criterion, args)
-    results = adv_test(model, x_tests, x_test_advs, y_tests, criterion, args)
-    print(results)
-    return
+    og_x_tests, og_x_test_advs, og_y_tests = gen_adv_inputs(model, val_loader, criterion, args)
+    og_mean_results = adv_test(model, og_x_tests, og_x_test_advs, og_y_tests, criterion, args)
+    print('adv test on original model')
+    print(og_mean_results)
+
     # next, loop over feature layers in network
     for part_of_model, part_name in [[model.features, 'features'],[model.classifier, 'classifier']]:
         for i, L in enumerate(part_of_model):
@@ -151,7 +152,7 @@ def main():
             #if name_to_match in SVD_rep_paths:
             #if name_to_match in ['features_1_ReLU','features_3_ReLU','features_13_ReLU','features_15_ReLU','features_23_MaxPool2d']:
             #if name_to_match in ['features_6_ReLU','features_8_ReLU','features_11_ReLU','features_18_ReLU','features_20_ReLU','features_22_ReLU','features_25_ReLU','features_27_ReLU','features_29_ReLU','features_4_MaxPool2d','features_9_MaxPool2d','features_16_MaxPool2d']:
-            if name_to_match in ['features_27_ReLU','features_29_ReLU']:
+            if name_to_match in ['features_1_ReLU']:
             # if name_to_match in layer_names:
                 print('caught',name_to_match, i)
 
@@ -167,6 +168,7 @@ def main():
                 dist = 100.0 
 
                 k = maxK
+                k = 2000
                 
                 # need to get max prec1 first, define compare. . 
                 limit = 15 
@@ -207,26 +209,36 @@ def main():
                     if range_[1]<dist:
                         k += np.int(np.abs(hist[-1] - hist[-2])/2)
 
+                # try original adv images on bottlenecked model
+                og_mean_results_bottleneck = adv_test(model_, og_x_tests, og_x_test_advs, og_y_tests, criterion, args)
+                print('model adv images on bottlenecked model')
+                print(og_mean_results_bottleneck)
 
-                pathname = os.path.join(args.results_dir,'MCSVD_test_play_sample200_{}.h5'.format(name_to_match)) 
+                # and generate adv examples for bottlenecked model
+                x_tests, x_test_advs, y_tests = gen_adv_inputs(model_, val_loader, criterion, args)
+                mean_results_bottleneck = adv_test(model_, x_tests, x_test_advs, y_tests, criterion, args)
+                print('bottlenecked model adv images on bottlenecked model')
+                print(mean_results_bottleneck)
+
+                pathname = os.path.join(args.results_dir,'MCSVD_adv_test_{}.h5'.format(name_to_match)) 
                 print('saving results at ',pathname)
                 f = h5.File(pathname, 'w')
-                # f.create_dataset('search_results', data=np.array(results))
-                f.create_dataset('drop_component_results', data=np.array(drop_component_results))
-                f.create_dataset('drop_last_results', data=np.array(drop_last_results))
-                f.close()
-                print('results saved')
+                f.create_dataset('search_results', data=np.array(results))
+                f.create_dataset('adv_test', data=np.array([og_mean_results, og_mean_results_bottleneck, mean_results_bottleneck]))
+                #f.create_dataset('drop_last_results', data=np.array(drop_last_results))
+                #f.close()
+                #print('results saved')
 
 def gen_adv_inputs(model, loader, criterion, args, epsilon=0.2):
     """take a model and dataloader and make a set of adversarial images using ART's fast gradient method."""
     x_tests, x_test_advs, y_tests = [], [], []
     for i, (x_test, y_test) in enumerate(loader):
+        print('Computing adversarial batch: {}'.format(i+1))
         x_test = x_test.detach().cpu().numpy()
         y_test = y_test.detach().cpu().numpy()
-
+        print('shape:', x_test.shape)
         if i == 0:
             # in first draw, specify the adversarial generator 
-            print(x_test.shape, y_test.shape)
             model_parameters = filter(lambda p: p.requires_grad,model.parameters())
             optimizer = torch.optim.SGD(model_parameters, args.lr,
                     momentum=args.momentum, weight_decay=args.weight_decay)
@@ -263,15 +275,18 @@ def adv_test(model, x_tests, x_test_advs, y_tests, criterion, args):
     for x_test, x_test_adv, y_test in zip(x_tests, x_test_advs, y_tests):
         predictions = classifier.predict(x_test)
         accuracy = np.sum(np.argmax(predictions, axis=1) == y_test) / len(y_test)
-        print('Accuracy before attack: {}%'.format(accuracy * 100))
+        #print('Accuracy before attack: {}%'.format(accuracy * 100))
         
         predictions = classifier.predict(x_test_adv)
         adv_accuracy = np.sum(np.argmax(predictions, axis=1) == y_test) / len(y_test)
-        print('Accuracy after attack: {}%'.format(adv_accuracy * 100))
+        #print('Accuracy after attack: {}%'.format(adv_accuracy * 100))
 
         results.append([accuracy, adv_accuracy])
 
-    return results 
+    results = np.array(results)
+    means = results.mean(axis=0)
+
+    return means
 
 class VGG_pc_bottleneck(nn.Module):
     ''' 
