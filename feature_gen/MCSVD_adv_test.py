@@ -10,9 +10,11 @@ from scipy.io import loadmat
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
+
+from art.attacks.fast_gradient import FastGradientMethod
+from art.classifiers.pytorch import PyTorchClassifier
 
 # local packages
 import models
@@ -42,26 +44,20 @@ parser.add_argument('--seed', dest='seed', default=0, type=int,
                     help='random number generator seed')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
-parser.add_argument('--epochs', default=300, type=int, metavar='N',
-                    help='number of total epochs to run')
 parser.add_argument('--batchnorm', default=0, type=int,
                     help='If true, construct networks with batchnorm.')
 parser.add_argument('--dropout', default=0.0, type=float,
                     help='probability of dropout')
 parser.add_argument('--dataaug', action='store_true',
                     help='whether or not to train with data augmentation')
-parser.add_argument('-b', '--batch-size', default=128, type=int,
-                    metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('--optimizer', metavar='OPT', default='SGD',
-                    choices=['SGD', 'ADAM'],
-                    help='Optimizer choices: ' + ' | '.join(['SGD', 'ADAM']) +
-                    ' (default: SGD)')
 parser.add_argument('--lr', '--learning-rate', default=0.05, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum')
 parser.add_argument('--weight-decay', '--wd', default=5e-4, type=float,
                     metavar='W', help='weight decay (default: 5e-4)')
+parser.add_argument('-b', '--batch-size', default=128, type=int,
+                    metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('--print-freq', '-p', default=20, type=int,
                     metavar='N', help='print frequency (default: 20)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
@@ -128,28 +124,22 @@ def main():
     # define loss function (criterion) and pptimizer
     criterion = nn.CrossEntropyLoss().cuda()
 
+    # this is where the SVD compressed representations live
+    SVD_base_path = args.SVD_base_path
+    SVD_rep_paths = os.listdir(SVD_base_path)
+    #layer_names = ['features_1_ReLU','features_8_ReLU','features_16_MaxPool2d', 'classifier_1_ReLU']
+    #layer_names.reverse()
+    print('SVD_rep_paths', SVD_rep_paths) 
+    
+    results = []
+
     # initialize original, trained model, get it's best score
     best_prec1, best_loss_avg, best_class_acc = sample(train_loader, model, criterion, args.start_epoch, 'Full')
 
-    k_map = {
-            'features_1_ReLU': 65536,
-            'features_3_ReLU': 65536,
-            'features_6_ReLU': 32768,
-            'features_8_ReLU': 32768,
-            'features_11_ReLU': 16384,
-            'features_13_ReLU': 16384,
-            'features_15_ReLU': 16384,
-            'features_18_ReLU': 8192,
-            'features_20_ReLU': 8192,
-            'features_22_ReLU': 8192,
-            'features_25_ReLU': 2048,
-            'features_27_ReLU': 2048,
-            'features_29_ReLU': 2048,
-            'features_30_MaxPool2d': 512, 
-            'classifier_1_ReLU': 512, 
-            'classifier_3_ReLU': 512        
-    }
-
+    x_tests, x_test_advs, y_tests = gen_adv_inputs(model, val_loader, criterion, args)
+    results = adv_test(model, x_tests, x_test_advs, y_tests, criterion, args)
+    print(results)
+    return
     # next, loop over feature layers in network
     for part_of_model, part_name in [[model.features, 'features'],[model.classifier, 'classifier']]:
         for i, L in enumerate(part_of_model):
@@ -157,107 +147,140 @@ def main():
             name = part_name+'_'+str(i)+"_"+str(L)
             name_to_match = name.split('(')[0]
             print('name_to_match ',name_to_match )
-            # if name_to_match in ['features_29_ReLU','features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
-            #if name_to_match in ['features_30_MaxPool2d', 'classifier_1_ReLU', 'classifier_3_ReLU']:
-            #if name_to_match in ['features_1_ReLU', 'features_15_ReLU', 'classifier_1_ReLU', 'classifier_3_ReLU']:
-            if name_to_match in ['features_29_ReLU', 'classifier_1_ReLU', 'classifier_3_ReLU']:
+            # check if the SVD_rep file exists
+            #if name_to_match in SVD_rep_paths:
+            #if name_to_match in ['features_1_ReLU','features_3_ReLU','features_13_ReLU','features_15_ReLU','features_23_MaxPool2d']:
+            #if name_to_match in ['features_6_ReLU','features_8_ReLU','features_11_ReLU','features_18_ReLU','features_20_ReLU','features_22_ReLU','features_25_ReLU','features_27_ReLU','features_29_ReLU','features_4_MaxPool2d','features_9_MaxPool2d','features_16_MaxPool2d']:
+            if name_to_match in ['features_27_ReLU','features_29_ReLU']:
+            # if name_to_match in layer_names:
                 print('caught',name_to_match, i)
 
-               ## bisection like search for dim est
-               # start = maxK # max rank of approximation
-               # range_ = [1.0,2.0]
-               # hist = [0.0]
-               # #scores = [100.0]
-               # dist = 100.0 
+                ## fetch U, k
+                SVD_layer_path = os.path.join(SVD_base_path, name_to_match)
+                U, maxK = get_U(SVD_layer_path)
+                print('max K for layer:', maxK)
+                # pull out as args?
+                start = maxK # max rank of approximation
+                range_ = [1.0,2.0]
+                hist = [0.0]
+                #scores = [100.0]
+                dist = 100.0 
 
-                k = k_map[name_to_match]
-                ## create first component
-                U = np.random.randn(k,1)
-                Q,R = np.linalg.qr(U)
-                print('Q.shape', Q.shape)
+                k = maxK
                 
-                build_OS_results = []
-                sample_n = k
+                # need to get max prec1 first, define compare. . 
+                limit = 15 
+                counter = 0
 
-                for component in np.arange(0,sample_n):
-                    print('learn component {} of {}'.format(component, name_to_match))
-                    
-                    # create model with bottleneck
-                    model_ = bottleneck_model(model, i, Q, loc=part_name)
+                print('Entering while loop')
+                while not (range_[0]<dist<range_[1]):
+                    print('k=',k)
+                    counter +=1
+                    if counter > limit or k > maxK:
+                        break
+                    # create model with rank k approximator inserted at layer i
+                    model_ = VGG_pc_bottleneck(model, i, U[:k], loc=part_name)
                     model_.cuda()
-                    freeze_trained_weights(model_)
 
-                    model_parameters = filter(lambda p: p.requires_grad,model_.parameters())
-                    if args.optimizer == 'SGD':
-                        optimizer = torch.optim.SGD(model_parameters, args.lr,
-                               momentum=args.momentum,
-                               weight_decay=args.weight_decay)
-
-                    # train subspace
-                    for epoch in range(0, args.epochs):
-                        print('beginning epoch: ', epoch)
-
-                        train_bottleneck_component(train_loader, model_, criterion, optimizer, epoch, component, l=1.0)
-                        # train_bottleneck(train_loader, model_, criterion, optimizer, epoch, l=1.0)
-
-                        # evaluate on validation set
-                        #prec1, loss_avg = validate_bottleneck(val_loader, model_, criterion, epoch=epoch)
-
-                    ## ensure Q is orthonormalized and then check final validation acc
-                    Q = model_.estimator.weight.cpu().detach().numpy().T
-                    Q,R = np.linalg.qr(Q)
-                    model_ = bottleneck_model(model, i, Q, loc=part_name)
-                    model_.cuda()
+                    # sample model loss at rank k approximation for layer
                     prec1, loss_avg, class_acc = sample(train_loader, model_, criterion, args.start_epoch, k)
-                    #prec1, loss_avg = validate_bottleneck(val_loader, model_, criterion, epoch=epoch)
-                
-
                     dist = 100*(best_prec1[0].item() - prec1[0].item())/best_prec1[0].item()
                     
                     print('dist:',dist)
 
-                    build_OS_results.append([
+                    hist.append(k)
+                    #scores.append(prec1[0].item())
+                    results.append([
                         name_to_match, 
                         k, 
-                        component, 
                         prec1[0].item(), 
                         loss_avg[0].item(), 
                         dist, 
                         best_prec1[0].item(), 
                         str(class_acc),
                         str(best_class_acc),
-                        #U.shape[1]
+                        U.shape[1]
                     ])
 
-                    if dist < 1:
-                        pathname = os.path.join(args.results_dir,'MCOS_W_{}_{}'.format(sample_n, name_to_match)) 
-                        np.save(pathname, Q)
-                        break
+                    if range_[0]>dist:
+                        k -= np.int(np.abs(hist[-1] - hist[-2])/2)
+                    if range_[1]<dist:
+                        k += np.int(np.abs(hist[-1] - hist[-2])/2)
 
-                    # and a new random direction
-                    U = np.random.randn(k,1)
-        
-                    # concatenate new random direction
-                    Q_ = np.concatenate([Q,U],axis=1)
-                    
-                    # and make it orthogonal to original Q
-                    Q,R = np.linalg.qr(Q_)
-                
-                pathname = os.path.join(args.results_dir,'MCOS_test_{}_{}.h5'.format(sample_n, name_to_match)) 
+
+                pathname = os.path.join(args.results_dir,'MCSVD_test_play_sample200_{}.h5'.format(name_to_match)) 
                 print('saving results at ',pathname)
                 f = h5.File(pathname, 'w')
-                f.create_dataset('build_OS_result', data=np.array(build_OS_results))
+                # f.create_dataset('search_results', data=np.array(results))
+                f.create_dataset('drop_component_results', data=np.array(drop_component_results))
+                f.create_dataset('drop_last_results', data=np.array(drop_last_results))
                 f.close()
                 print('results saved')
 
-class bottleneck_model(nn.Module):
+def gen_adv_inputs(model, loader, criterion, args, epsilon=0.2):
+    """take a model and dataloader and make a set of adversarial images using ART's fast gradient method."""
+    x_tests, x_test_advs, y_tests = [], [], []
+    for i, (x_test, y_test) in enumerate(loader):
+        x_test = x_test.detach().cpu().numpy()
+        y_test = y_test.detach().cpu().numpy()
+
+        if i == 0:
+            # in first draw, specify the adversarial generator 
+            print(x_test.shape, y_test.shape)
+            model_parameters = filter(lambda p: p.requires_grad,model.parameters())
+            optimizer = torch.optim.SGD(model_parameters, args.lr,
+                    momentum=args.momentum, weight_decay=args.weight_decay)
+
+            classifier = PyTorchClassifier(model=model, loss=criterion, optimizer=optimizer, input_shape=tuple(x_test.shape[1:]), nb_classes=args.classes) 
+            adv_crafter = FastGradientMethod(classifier, eps=epsilon)
+
+        x_test_adv = adv_crafter.generate(x=x_test)
+
+        x_tests.append(x_test)
+        y_tests.append(y_test)
+        x_test_advs.append(x_test_adv)
+    
+    x_tests = np.array(x_tests)
+    x_test_advss = np.array(x_test_advs)
+    y_tests = np.array(y_tests)
+
+    return x_tests, x_test_advs, y_tests
+
+def adv_test(model, x_tests, x_test_advs, y_tests, criterion, args):
+    """Run original images and adv images on provided model"""
+    #x_tests = x_tests.reshape(-1, args.batch_size, x_tests.shape[1:])
+    #x_test_advs = x_test_advs.reshape(-1, args.batch_size, x_test_advs.shape[1:])
+    #y_tests = y_tests.reshape(-1, args.batch_size, y_tests.shape[1:])
+
+    model_parameters = filter(lambda p: p.requires_grad,model.parameters())
+    optimizer = torch.optim.SGD(model_parameters, args.lr,
+            momentum=args.momentum, weight_decay=args.weight_decay)
+    
+    classifier = PyTorchClassifier(model=model, loss=criterion, optimizer=optimizer, input_shape=tuple(x_tests.shape[2:]), nb_classes=args.classes) 
+
+    results = []
+
+    for x_test, x_test_adv, y_test in zip(x_tests, x_test_advs, y_tests):
+        predictions = classifier.predict(x_test)
+        accuracy = np.sum(np.argmax(predictions, axis=1) == y_test) / len(y_test)
+        print('Accuracy before attack: {}%'.format(accuracy * 100))
+        
+        predictions = classifier.predict(x_test_adv)
+        adv_accuracy = np.sum(np.argmax(predictions, axis=1) == y_test) / len(y_test)
+        print('Accuracy after attack: {}%'.format(adv_accuracy * 100))
+
+        results.append([accuracy, adv_accuracy])
+
+    return results 
+
+class VGG_pc_bottleneck(nn.Module):
     ''' 
     Expects a VGG like network split into features1, features2, classifier1, and classifier2,
     and an estimator (ie U.T@U, from the SVD of the representations). loc specifies if the estimator
     is to be put into the feature layers or classifier.
     '''
     def __init__(self, model, i, U, loc='features'):
-        super(bottleneck_model, self).__init__()
+        super(VGG_pc_bottleneck, self).__init__()
         if loc=='features':
             self.features1 = nn.Sequential(*list(model.features.children())[:i+1])
             self.features2 = nn.Sequential(*list(model.features.children())[i+1:])
@@ -268,11 +291,28 @@ class bottleneck_model(nn.Module):
             self.features2 = nn.Sequential()
             self.classifier1 = nn.Sequential(*list(model.classifier.children())[:i+1])
             self.classifier2 = nn.Sequential(*list(model.classifier.children())[i+1:])
-        print(U.shape)
-        self.estimator = nn.Linear(in_features=U.shape[0], out_features=U.shape[1], bias=False)
-        self.estimator.weight = torch.nn.parameter.Parameter(data=torch.Tensor(U.T))
         
+        if U.shape[1]>U.shape[0]:
+            U = U.T
+
+        print('working U shape:', U.shape)
+
+        self.estimator = nn.Sequential(
+            nn.Linear(in_features=U.shape[0], out_features=U.shape[1], bias=False),
+            nn.Linear(in_features=U.shape[1], out_features=U.shape[0], bias=False)
+        )
+        self.init_estimator(U)
         self.loc = loc
+
+        for m in self.modules():
+            m.requires_grad = False
+
+    def init_estimator(self, U):
+        for m in self.estimator:
+            if m.weight.shape[0] == U.shape[0]:
+                m.weight = torch.nn.parameter.Parameter(data=torch.Tensor(U))
+            if m.weight.shape[1] == U.shape[0]:
+                m.weight = torch.nn.parameter.Parameter(data=torch.Tensor(U.T))
         
     def forward(self, x): 
         x = self.features1(x)
@@ -280,116 +320,21 @@ class bottleneck_model(nn.Module):
         # if estimator goes in between features, this route is called
         if self.loc == 'features':
             size = x.size()
-#             print(size)
-            x_ = x.view(x.size(0), -1)
-#             print(x.size())
-            xW = self.estimator(x_)
-            xWWt = F.linear(xW, self.estimator.weight.t())
-            x = xWWt
+            x = x.view(x.size(0), -1)
+            x = self.estimator(x)
             x = x.view(size)
             
         x = self.features2(x)
         x = x.view(x.size(0), -1) 
         x = self.classifier1(x)
-        
+       
+        # else, estimator goes into the classifier, this route is called 
         if self.loc == 'classifier':
-            x_ = x
-            xW = self.estimator(x_)
-            xWWt = F.linear(xW, self.estimator.weight.t())
-            x = xWWt
+            x = self.estimator(x)
         
         x = self.classifier2(x)
         
-        return x#, [x_, xWWt]
-
-def freeze_trained_weights(model):
-    for name, L in model.named_parameters():
-        if 'estimator' not in name:
-            print('params {} frozen.'.format(name))
-            L.requires_grad = False
-
-def train_bottleneck_component(train_loader, model, criterion, optimizer, epoch, component, l=1):
-    """
-        Run one train epoch
-    """
-    batch_time = AverageMeter()
-    data_time = AverageMeter()
-    losses = AverageMeter()
-    norm_losses = AverageMeter()
-    orth_losses = AverageMeter()
-    top1 = AverageMeter()
-
-    # switch to train mode
-    model.train()
-
-    end = time.time()
-    for i, (input, target) in enumerate(train_loader):
-        target = target.cuda(async=True).long()
-        input_var = torch.autograd.Variable(input).cuda()
-
-        #target_var = torch.autograd.Variable(target)
-        target_var = torch.autograd.Variable(target).long()
-
-        # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
-        norm_loss = l*compute_norm_loss(model.estimator.weight)
-        
-        #orth_loss = l*ortho_cost_1(model.estimator.weight)
-        orth_loss = l*FIP_cost(model.estimator.weight)
-        
-        joint_loss = loss + norm_loss + orth_loss
-        
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        joint_loss.backward()
-        
-        # zero grad for all but the current component
-        for p in model.parameters():
-            if p.requires_grad:
-                for row in range(p.grad.shape[0]):
-                    if row != component:
-                        p.grad[row] = 0
-        
-        optimizer.step()
-
-        output = output.float()
-        loss = loss.float()
-        
-        # measure accuracy and record loss
-        prec1 = accuracy(output.data, target)[0]
-        losses.update(loss.data[0], input.size(0))
-        norm_losses.update(norm_loss.data[0], input.size(0))
-        orth_losses.update(orth_loss, input.size(0))
-        top1.update(prec1[0], input.size(0))
-
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-        
-        if i % args.print_freq == 0:
-            print('Epoch: [{0}][{1}/{2}]\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Norm Loss {norm_loss.val:.4f} ({norm_loss.avg:.4f})\t'
-                  'Orth Loss {orth_loss.val:.4f} ({orth_loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
-                      epoch, i, len(train_loader), loss=losses, norm_loss=norm_losses, 
-                      orth_loss=orth_losses, top1=top1))
-
-compute_norm_loss = lambda W : torch.abs(1-W.norm(dim=1)).sum()
-ortho_cost_1 = lambda W : torch.abs(torch.matmul(W,W.t()) - torch.eye(W.size(0))).sum()
-
-cos = torch.nn.CosineSimilarity(dim=0)
-
-def FIP_cost(W):
-    cost = 0
-    for m in range(len(W)):
-        for n in range(len(W)):
-            if m != n:
-                cost_mn = cos(W[m],W[n]).abs()
-                cost+=cost_mn
-    return cost
-
+        return x
 
 def sample(loader, model, criterion, epoch, image_set):
     """ 

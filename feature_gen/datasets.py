@@ -167,7 +167,8 @@ def construct_data_loaders(args, sample=False):
             transforms.ToPILImage(),
             #transforms.Resize([224,224]),
             transforms.ToTensor(),
-            transforms.Normalize((0.44688916, 0.44688916, 0.44688916),(0.17869806, 0.17869806, 0.17869806))
+            #transforms.Normalize((0.44688916, 0.44688916, 0.44688916),(0.17869806, 0.17869806, 0.17869806))
+            transforms.Normalize((0.485, 0.456, 0.406),(0.229, 0.224, 0.225))
         ])
 
         data = loadmat('data/HvM_224px.mat')
